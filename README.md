@@ -17,6 +17,7 @@
 - [Prérequis](#-prérequis)
 - [Installation](#-installation)
 - [Configuration](#-configuration)
+- [Installation avec Docker (Recommandé)](#-installation-avec-docker-recommandé)
 - [Utilisation](#-utilisation)
 - [Architecture](#-architecture)
 - [Documentation](#-documentation)
@@ -146,6 +147,134 @@ Exécutez les scripts SQL dans l'ordre suivant dans l'éditeur SQL de Supabase :
 2. Créez un bucket nommé `patient-documents`
 3. Configurez les politiques d'accès (voir [STOCKAGE_DOCUMENTS_GUIDE.md](src/STOCKAGE_DOCUMENTS_GUIDE.md))
 
+## 🐳 Installation avec Docker (Recommandé)
+
+### Prérequis Docker
+
+- **Docker Desktop** (version 24.0 ou supérieure) - [Télécharger](https://www.docker.com/products/docker-desktop)
+- **Docker Compose** (version 2.20 ou supérieure) - Inclus avec Docker Desktop
+- **WSL2** (pour Windows) - [Installer WSL2](https://docs.microsoft.com/fr-fr/windows/wsl/install)
+
+### 1. Cloner le repository
+
+```bash
+git clone https://github.com/NEXUS-AI-Innovation-lab-for-Health/CareWay.git
+cd CareWay
+```
+
+### 2. Configuration automatique des fichiers d'environnement
+
+Pour les nouveaux membres de l'équipe ou lors de la première installation :
+
+```powershell
+.\setup.ps1
+```
+
+Ce script va automatiquement :
+- ✅ Créer le fichier `docker/.env` avec les clés JWT Supabase
+- ✅ Créer le fichier `.env.development` pour l'API Gateway
+- ✅ Vérifier que tous les fichiers nécessaires existent
+
+**Configuration manuelle (alternative)** :
+
+Si vous préférez configurer manuellement :
+
+```powershell
+# Créer le fichier docker/.env
+Copy-Item .env.example docker/.env
+
+# Créer le fichier .env.development
+@"
+VITE_SUPABASE_URL=http://localhost:8000
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+"@ | Out-File -FilePath .env.development -Encoding utf8
+```
+
+### 3. Démarrer l'environnement Docker
+
+```bash
+npm run docker:start
+```
+
+Cette commande démarre **11 services** :
+
+- 🌐 **Frontend React** : http://localhost:3000
+- 🗄️ **PostgreSQL** : localhost:54322
+- 🎨 **Supabase Studio** : http://localhost:54323
+- 🔐 **Auth (GoTrue)** : localhost:54324
+- 📡 **REST API (PostgREST)** : localhost:54321
+- ⚡ **Realtime** : localhost:54325
+- 📦 **Storage API** : localhost:54326
+- 🔧 **Postgres Meta** : localhost:54327
+- 🚪 **Kong Gateway** : localhost:8000
+- 📧 **Inbucket (Email testing)** : http://localhost:54324
+
+### 4. Initialiser la base de données
+
+Une fois les conteneurs démarrés, accédez à Supabase Studio sur http://localhost:54323 et exécutez les scripts SQL :
+
+1. **Structure de base** : Consultez [DATABASE_STRUCTURE.md](src/DATABASE_STRUCTURE.md)
+2. **Types de soins** : `src/scripts/init-care-types.sql`
+3. **Champs médicaux** : `src/scripts/add-patient-medical-fields.sql`
+4. **Données de démonstration** (optionnel) : `src/demo-data-script.sql`
+
+### Commandes Docker utiles
+
+```bash
+# Démarrer les conteneurs
+npm run docker:start
+
+# Arrêter les conteneurs
+npm run docker:stop
+
+# Voir les logs
+npm run docker:logs
+
+# Nettoyer complètement (attention : supprime les volumes)
+npm run docker:clean
+
+# Se connecter au conteneur frontend
+docker exec -it careway-frontend sh
+
+# Se connecter à PostgreSQL
+docker exec -it careway-db psql -U postgres
+```
+
+### Avantages de Docker
+
+✅ **Installation rapide** : Tout est automatisé, pas besoin de configurer Supabase manuellement  
+✅ **Environnement isolé** : Pas de conflits avec d'autres projets  
+✅ **Portable** : Fonctionne à l'identique sur tous les systèmes  
+✅ **Hot reload** : Les modifications du code sont immédiatement visibles  
+✅ **Stack Supabase complète** : Auth, Storage, Realtime, Studio inclus  
+
+### Résolution des problèmes
+
+**Port 3000 déjà utilisé** :
+```bash
+# Windows
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
+
+# Modifier le port dans docker-compose.yml
+ports:
+  - "3001:3000"  # Utiliser le port 3001 au lieu de 3000
+```
+
+**Les modifications ne sont pas prises en compte** :
+```bash
+# Reconstruire les conteneurs
+docker-compose -f docker/docker-compose.yml build --no-cache
+npm run docker:start
+```
+
+**Problèmes de volumes** :
+```bash
+# Nettoyer et redémarrer
+npm run docker:clean
+npm run docker:start
+```
+
 ## 🎮 Utilisation
 
 ### Démarrer le serveur de développement
@@ -226,12 +355,23 @@ Pour plus d'informations détaillées, consultez :
 
 ## 📜 Scripts disponibles
 
+### Scripts de développement
+
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Lance le serveur de développement |
+| `npm run dev` | Lance le serveur de développement (sans Docker) |
 | `npm run build` | Compile l'application pour la production |
 | `npm run preview` | Prévisualise le build de production |
 | `npm run lint` | Vérifie le code avec ESLint |
+
+### Scripts Docker
+
+| Script | Description |
+|--------|-------------|
+| `npm run docker:start` | Démarre tous les conteneurs Docker (stack Supabase complète) |
+| `npm run docker:stop` | Arrête tous les conteneurs Docker |
+| `npm run docker:logs` | Affiche les logs de tous les conteneurs |
+| `npm run docker:clean` | ⚠️ Arrête et supprime tous les conteneurs et volumes |
 
 ## 👥 Contribution
 
