@@ -1,0 +1,30 @@
+# ================================
+# docker-compose.override.yml.example
+# ================================
+# Ce fichier montre comment personnaliser votre configuration Docker locale
+# Copiez ce fichier vers 'docker-compose.override.yml' et modifiez selon vos besoins
+# Docker Compose fusionnera automatiquement ce fichier avec docker-compose.yml
+
+version: '3.8'
+
+services:
+  frontend:
+    # Personnaliser les ports (exemple: si 3000 est déjà utilisé)
+    # ports:
+    #   - "8080:3000"
+
+    # Ajouter des variables d'environnement supplémentaires
+    # environment:
+    #   - VITE_API_URL=http://localhost:4000
+    #   - VITE_DEBUG=true
+
+    # Modifier les volumes (exemple: ajouter un dossier spécifique)
+    # volumes:
+    #   - ./custom-config:/app/config:ro
+
+    # Limiter les ressources (utile pour dev sur machine limitée)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 512M

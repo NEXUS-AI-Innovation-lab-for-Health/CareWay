@@ -1,0 +1,42 @@
+# ================================
+# Git Attributes pour CareWay
+# ================================
+
+# Scripts Shell : toujours LF (même sur Windows)
+*.sh text eol=lf
+healthcheck.sh text eol=lf
+
+# Makefiles : toujours LF
+Makefile text eol=lf
+
+# Scripts PowerShell : CRLF sur Windows
+*.ps1 text eol=crlf
+
+# Docker files
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+.dockerignore text eol=lf
+docker-compose*.yml text eol=lf
+
+# Nginx config
+nginx.conf text eol=lf
+
+# Documentation
+*.md text eol=lf
+
+# Web assets
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+
+# Images (binaire)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text eol=lf

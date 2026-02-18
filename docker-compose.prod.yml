@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # ================================
+  # Frontend CareWay (Production)
+  # ================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+    image: careway-frontend:latest
+    container_name: careway-frontend-prod
+    ports:
+      - "80:80"
+      # HTTPS (si vous utilisez un reverse proxy)
+      # - "443:443"
+    environment:
+      # Variables d'environnement pour Nginx
+      - NGINX_HOST=localhost
+      - NGINX_PORT=80
+    networks:
+      - careway-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    # Limites de ressources (recommandé en production)
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    # Politiques de logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ================================
+# Networks
+# ================================
+networks:
+  careway-network:
+    driver: bridge

@@ -1,0 +1,60 @@
+version: '3.8'
+
+# ================================
+# Configuration Staging/Testing
+# ================================
+# Environnement intermédiaire entre dev et prod
+# Pour tests d'intégration et QA
+
+services:
+  # ================================
+  # Frontend CareWay (Staging)
+  # ================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=staging
+    image: careway-frontend:staging
+    container_name: careway-frontend-staging
+    ports:
+      - "8080:80"
+    environment:
+      # Variables d'environnement staging
+      - NGINX_HOST=staging.careway.local
+      - NGINX_PORT=80
+      # Supabase staging (utilisez une instance séparée)
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_STAGING_URL:-https://your-staging-project.supabase.co}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_STAGING_ANON_KEY:-your-staging-anon-key}
+    networks:
+      - careway-staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    # Limites de ressources (similaires à la prod)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+# ================================
+# Networks
+# ================================
+networks:
+  careway-staging-network:
+    driver: bridge

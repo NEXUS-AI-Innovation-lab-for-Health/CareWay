@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # ================================
+  # Frontend CareWay (Développement)
+  # ================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: careway-frontend-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      # Monter le code source pour le hot reload
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.ts:/app/vite.config.ts
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./tsconfig.node.json:/app/tsconfig.node.json
+      # Utiliser un volume nommé pour node_modules (performance)
+      - node_modules:/app/node_modules
+    environment:
+      # Variables d'environnement Vite (préfixées par VITE_)
+      - NODE_ENV=development
+      # Ajouter vos variables Supabase ici
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-https://your-project.supabase.co}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:-your-anon-key}
+    networks:
+      - careway-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ================================
+# Volumes
+# ================================
+volumes:
+  node_modules:
+    driver: local
+
+# ================================
+# Networks
+# ================================
+networks:
+  careway-network:
+    driver: bridge
