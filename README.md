@@ -110,6 +110,14 @@ ou avec yarn :
 yarn install
 ```
 
+### 3. Installer les types TypeScript pour React
+
+```bash
+npm install --save-dev @types/react @types/react-dom
+```
+
+Cette étape est **essentielle** pour que TypeScript reconnaisse correctement la syntaxe JSX et les composants React.
+
 ## ⚙️ Configuration
 
 ### 1. Configuration Supabase
@@ -254,6 +262,3 @@ Pour toute question ou problème :
 - Ouvrez une [issue](https://github.com/NEXUS-AI-Innovation-lab-for-Health/CareWay/issues)
 
 ---
-
-**Made with ❤️ by NEXUS AI Innovation Lab for Health**
-  
