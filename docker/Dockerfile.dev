@@ -1,0 +1,40 @@
+# ================================
+# Dockerfile pour le développement local
+# ================================
+FROM node:20-alpine
+
+# Métadonnées
+LABEL maintainer="CareWay Team"
+LABEL description="CareWay - Environnement de développement"
+
+# Installer les outils de base nécessaires
+RUN apk add --no-cache git curl
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de définition de package pour optimiser le cache Docker
+COPY package.json package-lock.json* .npmrc ./
+
+# Configurer le registre pour les packages JSR (si nécessaire)
+RUN npm config set @jsr:registry https://npm.jsr.io
+
+# Installer les dépendances
+# Utilisation de 'ci' si lockfile existe pour des builds reproductibles, sinon install
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+# Copier le reste du code source
+COPY . .
+
+# Exposer le port Vite par défaut
+EXPOSE 3000
+
+# Créer et utiliser un utilisateur non-root pour la sécurité (même en dev)
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
+
+# Commande par défaut pour le développement avec Hot Reload
+CMD ["npm", "run", "dev", "--", "--host"]

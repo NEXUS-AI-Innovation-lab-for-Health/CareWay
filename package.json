@@ -57,6 +57,9 @@
       },
       "scripts": {
             "dev": "vite",
-            "build": "vite build"
+            "build": "vite build",
+            "docker:start": "powershell -ExecutionPolicy Bypass -File ./docker/docker-helper.ps1 start",
+            "docker:stop": "powershell -ExecutionPolicy Bypass -File ./docker/docker-helper.ps1 stop",
+            "docker:clean": "powershell -ExecutionPolicy Bypass -File ./docker/docker-helper.ps1 clean"
       }
 }

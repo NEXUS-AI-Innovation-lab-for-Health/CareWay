@@ -1,0 +1,215 @@
+services:
+  # ================================
+  # Frontend CareWay (Dev)
+  # ================================
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: careway-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.ts:/app/vite.config.ts
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./tsconfig.node.json:/app/tsconfig.node.json
+      # Volume anonyme pour node_modules (pas de montage de package.json nécessaire)
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      # Pointing to the local Kong gateway
+      - VITE_SUPABASE_URL=http://localhost:8000
+      - VITE_SUPABASE_ANON_KEY=${ANON_KEY}
+    depends_on:
+      - kong
+    networks:
+      - careway-net
+
+  # ================================
+  # Open Source Supabase Stack
+  # ================================
+  
+  # 1. Database
+  db:
+    container_name: careway-db
+    image: supabase/postgres:15.1.0.147
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    ports:
+      - "54322:5432" # Changed host port to avoid conflicts
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - ./volumes/db/data:/var/lib/postgresql/data
+      - ./volumes/db/init:/docker-entrypoint-initdb.d
+    networks:
+      - careway-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. Studio (Dashboard)
+  studio:
+    container_name: careway-studio
+    image: supabase/studio:20231123-64a766a
+    ports:
+      - "54323:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: http://localhost:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    networks:
+      - careway-net
+
+  # 3. Kong (API Gateway)
+  kong:
+    container_name: careway-kong
+    image: kong:2.8.1
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+    volumes:
+      - ./volumes/api/kong.yml:/var/lib/kong/kong.yml
+    networks:
+      - careway-net
+    depends_on:
+      - auth
+      - rest
+      - realtime
+
+  # 4. Authentication (GoTrue)
+  auth:
+    container_name: careway-auth
+    image: supabase/gotrue:v2.99.0
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: http://localhost:8000/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: http://localhost:3000/*
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_SMTP_HOST: inbucket
+      GOTRUE_SMTP_PORT: 2500
+      GOTRUE_SMTP_USER: admin
+      GOTRUE_SMTP_PASS: remote
+      GOTRUE_SMTP_ADMIN_EMAIL: admin@example.com
+    networks:
+      - careway-net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 5. REST API (PostgREST)
+  rest:
+    container_name: careway-rest
+    image: postgrest/postgrest:v11.2.2
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUC_VALUES: "false"
+    networks:
+      - careway-net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 6. Realtime
+  realtime:
+    container_name: careway-realtime
+    image: supabase/realtime:v2.27.5
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_SSL: "false"
+      SLOT_NAME: supabase_realtime_rls
+      TEMPORARY_SLOT: "true"
+      JWT_SECRET: ${JWT_SECRET}
+      REPLICATION_MODE: RLS
+      REPLICATION_POLL_INTERVAL: 100
+      SECURE_CHANNELS: "true"
+    networks:
+      - careway-net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 7. Storage
+  storage:
+    container_name: careway-storage
+    image: supabase/storage-api:v0.46.4
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+    volumes:
+      - ./volumes/storage:/var/lib/storage
+    networks:
+      - careway-net
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+
+  # 8. PostgreSQL Meta (Helper for Studio)
+  meta:
+    container_name: careway-meta
+    image: supabase/postgres-meta:v0.68.0
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - careway-net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 9. Inbucket (Email Mock)
+  inbucket:
+    container_name: careway-inbucket
+    image: inbucket/inbucket:3.0.3
+    ports:
+      - "54324:9000" # Web Interface
+    networks:
+      - careway-net
+
+networks:
+  careway-net:
+    driver: bridge
