@@ -133,7 +133,7 @@ export function HomePage({ onSelectPatient, onSelectNurse }: HomePageProps) {
             <strong>Laboratoire LISSI</strong>
           </p>
           <p className="text-xs text-gray-500">
-            Pierre Wantiez, Adam Chelli, Abdelghani Chibani
+            Adam Chelli, Pierre Wantiez, Raja Yaabba, Abdelghani Chibani
           </p>
           <p className="text-xs text-gray-400">
             {t('home.footer.terms')}
