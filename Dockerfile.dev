@@ -16,13 +16,15 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 # Copier les fichiers de dépendances
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* .npmrc ./
+
+# --- Configuration pour les packages JSR (redondant avec .npmrc mais plus sûr) ---
+RUN npm config set @jsr:registry https://npm.jsr.io
 
 # Installer toutes les dépendances (dev + prod)
-RUN npm ci
+RUN npm install
 
 # Copier le reste du code
-# Note: En dev, le code sera monté via volume pour le hot reload
 COPY . .
 
 # Exposer le port Vite (configuré à 3000)

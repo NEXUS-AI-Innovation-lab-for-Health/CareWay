@@ -4,10 +4,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json
+# NE PAS exclure package-lock.json car il est nécessaire pour npm install dans Docker
 
-# Build
+# Build (généré pendant le développement)
 build
+dist
 .cache
 
 # Tests
@@ -35,11 +36,10 @@ coverage
 .DS_Store
 
 # Docker
-Dockerfile
 Dockerfile.dev
 docker-compose.yml
-docker-compose.prod.yml
 .dockerignore
+docker-helper.ps1
 
 # Documentation
 README.md
@@ -61,8 +61,7 @@ temp
 *.tmp
 
 # Scripts SQL (si pas nécessaires en production)
-src/demo-data-script.sql
-src/scripts/*.sql
-
+src/demo-data-sgardés pour l'init de Supabase)
+# src/scripts/*.sql sont copiés dans le conteneur
 # Guidelines
 src/guidelines/

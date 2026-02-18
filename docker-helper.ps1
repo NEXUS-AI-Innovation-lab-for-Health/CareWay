@@ -1,7 +1,7 @@
 # ================================
-# CareWay Docker - Scripts PowerShell
+# CareWay Docker - Scripts PowerShell (Dev Only)
 # ================================
-# Script d'aide pour gérer Docker facilement
+# Script d'aide pour gérer Docker en développement
 # Usage: .\docker-helper.ps1 [commande]
 
 param(
@@ -11,82 +11,66 @@ param(
 
 function Show-Help {
     Write-Host ""
-    Write-Host "🐳 CareWay Docker Helper" -ForegroundColor Cyan
-    Write-Host "=========================" -ForegroundColor Cyan
+    Write-Host "🐳 CareWay Docker Helper (Développement)" -ForegroundColor Cyan
+    Write-Host "=========================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Commandes disponibles:" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  dev-start      " -NoNewline; Write-Host "Démarrer en mode développement" -ForegroundColor Gray
-    Write-Host "  dev-stop       " -NoNewline; Write-Host "Arrêter l'environnement dev" -ForegroundColor Gray
-    Write-Host "  dev-restart    " -NoNewline; Write-Host "Redémarrer l'environnement dev" -ForegroundColor Gray
-    Write-Host "  dev-logs       " -NoNewline; Write-Host "Voir les logs en temps réel" -ForegroundColor Gray
-    Write-Host "  dev-shell      " -NoNewline; Write-Host "Accéder au shell du conteneur" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  prod-build     " -NoNewline; Write-Host "Builder l'image de production" -ForegroundColor Gray
-    Write-Host "  prod-start     " -NoNewline; Write-Host "Démarrer en mode production" -ForegroundColor Gray
-    Write-Host "  prod-stop      " -NoNewline; Write-Host "Arrêter l'environnement prod" -ForegroundColor Gray
-    Write-Host "  prod-logs      " -NoNewline; Write-Host "Voir les logs de production" -ForegroundColor Gray
+    Write-Host "  start          " -NoNewline; Write-Host "Démarrer l'environnement de développement" -ForegroundColor Gray
+    Write-Host "  stop           " -NoNewline; Write-Host "Arrêter l'environnement" -ForegroundColor Gray
+    Write-Host "  restart        " -NoNewline; Write-Host "Redémarrer l'environnement" -ForegroundColor Gray
+    Write-Host "  logs           " -NoNewline; Write-Host "Voir les logs en temps réel" -ForegroundColor Gray
+    Write-Host "  shell          " -NoNewline; Write-Host "Accéder au shell du conteneur frontend" -ForegroundColor Gray
+    Write-Host "  db-shell       " -NoNewline; Write-Host "Accéder au shell PostgreSQL" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  clean          " -NoNewline; Write-Host "Nettoyer (conteneurs + volumes)" -ForegroundColor Gray
-    Write-Host "  clean-all      " -NoNewline; Write-Host "Nettoyer tout Docker (ATTENTION!)" -ForegroundColor Gray
+    Write-Host "  clean-all      " -NoNewline; Write-Host "Nettoyer tout (ATTENTION: perte de données!)" -ForegroundColor Gray
     Write-Host "  status         " -NoNewline; Write-Host "Voir l'état des conteneurs" -ForegroundColor Gray
     Write-Host "  health         " -NoNewline; Write-Host "Vérifier la santé des conteneurs" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Exemples:" -ForegroundColor Yellow
-    Write-Host "  .\docker-helper.ps1 dev-start" -ForegroundColor Green
-    Write-Host "  .\docker-helper.ps1 prod-build" -ForegroundColor Green
+    Write-Host "  .\docker-helper.ps1 start" -ForegroundColor Green
+    Write-Host "  .\docker-helper.ps1 logs" -ForegroundColor Green
+    Write-Host "  .\docker-helper.ps1 db-shell" -ForegroundColor Green
     Write-Host ""
 }
 
 function Start-Dev {
     Write-Host "🚀 Démarrage de l'environnement de développement..." -ForegroundColor Green
     docker compose up -d
-    Write-Host "✅ Application disponible sur http://localhost:3000" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "✅ Services démarrés:" -ForegroundColor Green
+    Write-Host "   - Frontend Vite:      http://localhost:3000" -ForegroundColor Cyan
+    Write-Host "   - Supabase DB:        localhost:5432" -ForegroundColor Cyan
+    Write-Host "   - Supabase API:       http://localhost:54321" -ForegroundColor Cyan
+    Write-Host ""
 }
 
 function Stop-Dev {
-    Write-Host "🛑 Arrêt de l'environnement de développement..." -ForegroundColor Yellow
+    Write-Host "🛑 Arrêt de l'environnement..." -ForegroundColor Yellow
     docker compose down
     Write-Host "✅ Arrêté" -ForegroundColor Green
 }
 
 function Restart-Dev {
-    Write-Host "🔄 Redémarrage de l'environnement de développement..." -ForegroundColor Yellow
+    Write-Host "🔄 Redémarrage de l'environnement..." -ForegroundColor Yellow
     docker compose restart
     Write-Host "✅ Redémarré" -ForegroundColor Green
 }
 
 function Show-DevLogs {
     Write-Host "📋 Affichage des logs (Ctrl+C pour quitter)..." -ForegroundColor Cyan
-    docker compose logs -f frontend
+    docker compose logs -f
 }
 
 function Enter-DevShell {
-    Write-Host "🐚 Accès au shell du conteneur..." -ForegroundColor Cyan
+    Write-Host "🐚 Accès au shell du conteneur frontend..." -ForegroundColor Cyan
     docker compose exec frontend sh
 }
 
-function Build-Prod {
-    Write-Host "🏗️  Build de l'image de production..." -ForegroundColor Green
-    docker compose -f docker-compose.prod.yml build
-    Write-Host "✅ Build terminé" -ForegroundColor Green
-}
-
-function Start-Prod {
-    Write-Host "🚀 Démarrage en production..." -ForegroundColor Green
-    docker compose -f docker-compose.prod.yml up -d
-    Write-Host "✅ Application disponible sur http://localhost" -ForegroundColor Green
-}
-
-function Stop-Prod {
-    Write-Host "🛑 Arrêt de l'environnement de production..." -ForegroundColor Yellow
-    docker compose -f docker-compose.prod.yml down
-    Write-Host "✅ Arrêté" -ForegroundColor Green
-}
-
-function Show-ProdLogs {
-    Write-Host "📋 Affichage des logs de production (Ctrl+C pour quitter)..." -ForegroundColor Cyan
-    docker compose -f docker-compose.prod.yml logs -f frontend
+function Enter-DBShell {
+    Write-Host "🗄️  Accès au shell PostgreSQL..." -ForegroundColor Cyan
+    docker compose exec supabase psql -U postgres -d careway
 }
 
 function Clean-Docker {
@@ -123,15 +107,12 @@ function Show-Health {
 
 # Traitement des commandes
 switch ($Command.ToLower()) {
-    "dev-start"   { Start-Dev }
-    "dev-stop"    { Stop-Dev }
-    "dev-restart" { Restart-Dev }
-    "dev-logs"    { Show-DevLogs }
-    "dev-shell"   { Enter-DevShell }
-    "prod-build"  { Build-Prod }
-    "prod-start"  { Start-Prod }
-    "prod-stop"   { Stop-Prod }
-    "prod-logs"   { Show-ProdLogs }
+    "start"       { Start-Dev }
+    "stop"        { Stop-Dev }
+    "restart"     { Restart-Dev }
+    "logs"        { Show-DevLogs }
+    "shell"       { Enter-DevShell }
+    "db-shell"    { Enter-DBShell }
     "clean"       { Clean-Docker }
     "clean-all"   { Clean-All }
     "status"      { Show-Status }

@@ -52,11 +52,11 @@
     },
     build: {
       target: 'esnext',
-      outDir: 'build',
+      outDir: 'dist', // Dossier de sortie par défaut de Vite (requis pour Docker)
     },
     server: {
       port: 3000,
       host: '0.0.0.0', // Pour accepter les connexions Docker
-      open: true,
+      open: false, // Désactivé pour Docker (évite les erreurs xdg-open)
     },
   });
