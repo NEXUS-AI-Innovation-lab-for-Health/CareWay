@@ -18,7 +18,8 @@ import {
   Sunrise,
   Sun,
   Moon,
-  Navigation
+  Navigation,
+  Video
 } from 'lucide-react';
 import { AppointmentDetailsModal } from './AppointmentDetailsModal';
 import { AppointmentConfirmDialog } from './AppointmentConfirmDialog';
@@ -340,6 +341,11 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
     }
   };
 
+  const handleLiveVisio = (appointment: Appointment) => {
+    console.log('Live visio avec', appointment.patientName);
+    // TODO: Logique de visio en direct
+  };
+
   const handleCompleteAppointment = async (id: string) => {
     try {
       // Marquer comme terminé dans le backend
@@ -653,24 +659,36 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
                             {t('dashboard.appointments.gps')}
                           </Button>
                         </div>
-                        <div className="pt-2 flex gap-2">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="flex-1"
-                            onClick={() => {
-                              setSelectedAppointment(appointment);
-                              setShowDetailsModal(true);
-                            }}
+                        <div className="pt-2 space-y-2">
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedAppointment(appointment);
+                                setShowDetailsModal(true);
+                              }}
+                            >
+                              {t('dashboard.appointments.details')}
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              className="flex-1 bg-black hover:bg-gray-800 text-white"
+                              onClick={() => handleCompleteAppointment(appointment.id)}
+                            >
+                              {t('dashboard.mark_completed')}
+                            </Button>
+                          </div>
+                          <Button
+                            onClick={() => handleLiveVisio(appointment)}
+                            variant="outline"
+                            className="gap-2 w-full"
+                            size="sm"
                           >
-                            {t('dashboard.appointments.details')}
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            className="flex-1 bg-black hover:bg-gray-800 text-white"
-                            onClick={() => handleCompleteAppointment(appointment.id)}
-                          >
-                            {t('dashboard.mark_completed')}
+                            <Video className="h-4 w-4" />
+                            <span className="hidden sm:inline">Live visio connect</span>
+                            <span className="sm:hidden">Visio</span>
                           </Button>
                         </div>
                       </CardContent>
