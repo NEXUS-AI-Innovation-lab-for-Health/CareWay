@@ -25,6 +25,7 @@ import { AppointmentDetailsModal } from './AppointmentDetailsModal';
 import { AppointmentConfirmDialog } from './AppointmentConfirmDialog';
 import { AIRouteOptimizer } from './AIRouteOptimizer';
 import { NurseSettings } from './NurseSettings';
+import { VisioModal } from './VisioModal';
 import type { User as UserType } from '../App';
 import * as api from '../services/api';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -64,6 +65,8 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showVisioModal, setShowVisioModal] = useState(false);
+  const [visioAppointment, setVisioAppointment] = useState<Appointment | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [careTypes, setCareTypes] = useState<api.CareType[]>([]);
 
@@ -342,8 +345,9 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   };
 
   const handleLiveVisio = (appointment: Appointment) => {
-    console.log('Live visio avec', appointment.patientName);
-    // TODO: Logique de visio en direct
+    console.log('Démarrage de la visio avec', appointment.patientName);
+    setVisioAppointment(appointment);
+    setShowVisioModal(true);
   };
 
   const handleCompleteAppointment = async (id: string) => {
@@ -837,6 +841,21 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
             setShowDetailsModal(false);
           }}
           patientId={selectedAppointment.patient?.id || selectedAppointment.patient_id}
+        />
+      )}
+
+      {visioAppointment && (
+        <VisioModal
+          isOpen={showVisioModal}
+          onClose={() => {
+            setShowVisioModal(false);
+            setVisioAppointment(null);
+          }}
+          userName={user.name}
+          otherUserName={visioAppointment.patientName}
+          roomId={visioAppointment.id}
+          patientId={visioAppointment.patient_id}
+          nurseId={user.id}
         />
       )}
     </div>

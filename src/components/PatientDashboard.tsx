@@ -20,6 +20,8 @@ import {
 import { BookingPage } from './BookingPage';
 import { NurseResultsPage } from './NurseResultsPage';
 import { AppointmentScheduler } from './AppointmentScheduler';
+import { IncomingCallNotification, type IncomingCall } from './IncomingCallNotification';
+import { VisioModal } from './VisioModal';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -61,6 +63,7 @@ interface Appointment {
   date: string;
   time: string;
   nurseName: string;
+  nurseId?: string;
   location: string;
   type: string;
   status: 'upcoming' | 'completed' | 'cancelled';
@@ -86,6 +89,10 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [careTypes, setCareTypes] = useState<api.CareType[]>([]);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const [showVisioModal, setShowVisioModal] = useState(false);
+  const [visioAppointment, setVisioAppointment] = useState<Appointment | null>(null);
+  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
 
   const fetchAppointments = async () => {
     try {
@@ -116,6 +123,7 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
           date: apt.date,
           time: apt.slot === 'morning' ? '09:00' : apt.slot === 'afternoon' ? '14:00' : '18:00',
           nurseName,
+          nurseId: apt.infirmier_id,
           location: apt.address,
           type: careTypeName,
           status: apt.status === 'pending' ? 'upcoming' : 
@@ -149,6 +157,113 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
     fetchAppointments();
     fetchCareTypes();
   }, [user.id]);
+
+  // Setup WebSocket connection for incoming calls
+  useEffect(() => {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsHost = window.location.hostname;
+    const wsUrl = `${wsProtocol}://${wsHost}:8080`;
+    console.log('📡 Patient connecting to WebSocket:', wsUrl);
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('✅ Patient WebSocket connected to:', wsUrl);
+      console.log('📤 Sending join message with patient ID:', user.id);
+      // Send join message with patient ID to register for incoming calls
+      ws.send(JSON.stringify({
+        type: 'join',
+        patientId: user.id,
+        role: 'patient',
+        username: user.name
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      console.log('📨 Patient received message:', message);
+
+      if (message.type === 'incoming-call') {
+        console.log('📞 INCOMING CALL DETECTED!', message);
+        const incomingCallObj: IncomingCall = {
+          id: message.appointmentId || `call_${Date.now()}`,
+          from: message.from,
+          fromUserId: message.nurseId,
+          nurseName: message.from,
+          appointmentId: message.appointmentId,
+          timestamp: message.timestamp || Date.now()
+        };
+        console.log('📞 Setting incoming call notification:', incomingCallObj);
+        setIncomingCall(incomingCallObj);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('❌ WebSocket error on patient side:', error);
+      console.error('⚠️ Could not connect to WebSocket at:', wsUrl);
+    };
+
+    ws.onclose = () => {
+      console.log('👋 Patient WebSocket closed');
+    };
+
+    setWsConnection(ws);
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, [user.id]);
+
+  const handleAcceptIncomingCall = (call: IncomingCall) => {
+    console.log('📞 Accepting call:', call);
+    
+    // Fermer la notification immédiatement
+    setIncomingCall(null);
+    
+    // Chercher le RDV correspondant, sinon en créer un temporaire
+    const appointment = appointments.find(apt => apt.id === call.appointmentId);
+    const visioData = appointment || {
+      id: call.appointmentId,
+      date: new Date().toISOString().split('T')[0],
+      time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      nurseName: call.nurseName,
+      nurseId: call.fromUserId,
+      location: '',
+      type: 'Visio',
+      status: 'upcoming' as const,
+    };
+    
+    console.log('📹 Opening visio with data:', visioData);
+    setVisioAppointment(visioData);
+    setShowVisioModal(true);
+    
+    // Envoyer l'acceptation à l'infirmière
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      wsConnection.send(JSON.stringify({
+        type: 'call-accepted',
+        appointmentId: call.appointmentId,
+        patientId: user.id,
+        to: call.fromUserId
+      }));
+    }
+  };
+
+  const handleRejectIncomingCall = (call: IncomingCall) => {
+    setIncomingCall(null);
+    
+    // Send rejection message to nurse
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      wsConnection.send(JSON.stringify({
+        type: 'call-rejected',
+        appointmentId: call.appointmentId,
+        patientId: user.id,
+        to: call.fromUserId
+      }));
+    }
+    
+    toast.error('Appel refusé');
+  };
 
   const upcomingAppointments = appointments
     .filter(apt => apt.status === 'upcoming')
@@ -642,6 +757,30 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Incoming Call Notification */}
+      {incomingCall && (
+        <IncomingCallNotification
+          call={incomingCall}
+          onAccept={handleAcceptIncomingCall}
+          onReject={handleRejectIncomingCall}
+        />
+      )}
+
+      {/* Visio Modal - patient side: no nurseId to avoid re-triggering incoming-call */}
+      {visioAppointment && (
+        <VisioModal
+          isOpen={showVisioModal}
+          onClose={() => {
+            setShowVisioModal(false);
+            setVisioAppointment(null);
+          }}
+          userName={user.name}
+          otherUserName={visioAppointment.nurseName}
+          roomId={visioAppointment.id}
+          patientId={user.id}
+        />
       )}
     </div>
   );

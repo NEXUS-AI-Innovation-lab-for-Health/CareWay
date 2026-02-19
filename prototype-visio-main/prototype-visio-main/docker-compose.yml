@@ -1,0 +1,27 @@
+services:
+  coturn:
+    image: coturn/coturn
+    container_name: oncocollab-coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "50000-50020:50000-50020/udp"
+    environment:
+      - EXTERNAL_IP=${EXTERNAL_IP:-127.0.0.1}
+    command:
+      - -n
+      - --log-file=stdout
+      - --min-port=50000
+      - --max-port=50020
+      - --listening-ip=0.0.0.0
+      - --external-ip=${EXTERNAL_IP:-127.0.0.1}
+      - --realm=oncocollab
+      - --user=admin:password
+      - --lt-cred-mech
+    networks:
+      - oncocollab-network
+
+networks:
+  oncocollab-network:
+    driver: bridge

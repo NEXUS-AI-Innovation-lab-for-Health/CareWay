@@ -1,0 +1,4 @@
+# Local Netlify folder
+.netlify
+/visio-server/node_modules
+/visio-server/node_modules

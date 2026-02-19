@@ -46,17 +46,21 @@
             "recharts": "^2.15.2",
             "sonner": "^2.0.3",
             "tailwind-merge": "*",
-            "vaul": "^1.1.2"
+            "vaul": "^1.1.2",
+            "ws": "^8.17.1"
       },
       "devDependencies": {
             "@types/node": "^20.10.0",
             "@types/react": "^19.2.14",
             "@types/react-dom": "^19.2.3",
             "@vitejs/plugin-react-swc": "^3.10.2",
+            "concurrently": "^8.2.2",
             "vite": "6.3.5"
       },
       "scripts": {
-            "dev": "vite",
+            "dev": "concurrently \"node visio-server.js\" \"vite\"",
+            "dev:app": "vite",
+            "dev:server": "node visio-server.js",
             "build": "vite build",
             "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
             "preview": "vite preview",
