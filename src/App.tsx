@@ -5,7 +5,6 @@ import { ModernRegisterForm } from './components/ModernRegisterForm';
 import { FranceConnectLogin } from './components/FranceConnectLogin';
 import { PatientDashboard } from './components/PatientDashboard';
 import { NurseDashboard } from './components/NurseDashboard';
-import { MedecinDashboard } from './components/MedecinDashboard';
 import { Toaster } from './components/ui/sonner';
 import { LanguageContext } from './components/LanguageContext';
 import { translations } from './components/translations';
@@ -108,8 +107,6 @@ export default function App() {
             onLogout={handleLogout}
             onUpdateUser={setCurrentUser}
           />
-        ) : currentUser.type === 'medecin' ? (
-          <MedecinDashboard user={currentUser} onLogout={handleLogout} />
         ) : (
           <NurseDashboard user={currentUser} onLogout={handleLogout} />
         )

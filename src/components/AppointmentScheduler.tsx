@@ -110,7 +110,7 @@ export function AppointmentScheduler({ nurse, onBack, onBookingComplete, user, i
   // Générer des jours consécutifs à partir de l'offset
   const getDays = (offset: number = 0, numDays: number = 7) => {
     // Simulated current date - Wednesday, January 28, 2026
-    const today = new Date('2026-01-28');
+    const today = new Date(); // Use current system date
     const days = [];
     for (let i = 0; i < numDays; i++) {
       const day = new Date(today);

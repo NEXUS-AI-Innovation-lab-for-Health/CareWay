@@ -13,7 +13,7 @@ const getClient = () => createClient(
 
 export interface User {
   id: string;
-  role: 'patient' | 'infirmier';
+  role: 'patient' | 'infirmier' | 'medecin';
   email: string | null;
   phone: string | null;
   first_name: string;
@@ -22,8 +22,8 @@ export interface User {
 }
 
 export const createUser = async (data: {
-  id?: string; // Add optional ID to match auth.users UUID
-  role: 'patient' | 'infirmier';
+  id?: string;
+  role: 'patient' | 'infirmier' | 'medecin';
   email?: string;
   phone?: string;
   first_name: string;

@@ -214,6 +214,28 @@ BEGIN
   END IF;
 END $$;
 
+-- Créer Sophie Martin (médecin) avec un UUID fixe correspondant au fallback dev
+DO $$
+DECLARE
+  sophie_id uuid := 'a1b2c3d4-0000-4000-8000-000000000002';
+BEGIN
+
+  -- 1. User
+  INSERT INTO public.users (id, role, email, first_name, last_name)
+  VALUES (sophie_id, 'medecin', 'dr.sophie.martin@medecin.fr', 'Sophie', 'Martin')
+  ON CONFLICT (id) DO NOTHING;
+
+  -- 2. Entrée dans infirmiers (table partagée avec les médecins)
+  INSERT INTO public.infirmiers (user_id)
+  VALUES (sophie_id)
+  ON CONFLICT (user_id) DO NOTHING;
+
+  -- 3. Settings par défaut
+  INSERT INTO public.infirmier_settings (infirmier_id)
+  VALUES (sophie_id)
+  ON CONFLICT (infirmier_id) DO NOTHING;
+
+END $$;
 
 -- ---------------------------
 -- INDEXES
