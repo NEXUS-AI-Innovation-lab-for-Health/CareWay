@@ -1,4 +1,3 @@
-import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { User, Stethoscope, Shield } from 'lucide-react';
 import { LanguageSwitcher } from './LanguageSwitcher';
