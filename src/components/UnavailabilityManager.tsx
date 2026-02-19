@@ -128,8 +128,8 @@ export function UnavailabilityManager({ nurseId, onUnavailabilitiesChange }: Una
 
   const isFutureOrToday = (dateStr: string) => {
     const date = new Date(dateStr);
-    // Simulated current date - Wednesday, February 18, 2026 (updated to today's date in prompt)
-    const today = new Date('2026-02-18');
+    // Use current system date
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
     return date >= today;
   };
