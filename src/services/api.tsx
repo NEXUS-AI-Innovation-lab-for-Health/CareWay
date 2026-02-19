@@ -287,3 +287,110 @@ export const deleteUnavailability = async (
     headers: { 'Authorization': `Bearer ${publicAnonKey}` }
   });
 };
+
+// ============================================
+// VISIT REPORTS — Workflow de validation de visite
+// ============================================
+
+export interface VisitReport {
+  id: string;
+  appointment_id: string;
+  actes_realises: string | null;
+  observations: string | null;
+  medicaments_administres: string | null;
+  suite_a_donner: string | null;
+  pm_role: 'infirmier' | 'medecin';
+  pm_id: string;
+  workflow_step: 'awaiting_medecin' | 'awaiting_patient' | 'completed';
+  medecin_validated_at: string | null;
+  medecin_validator_id: string | null;
+  patient_approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields (when queried with appointment)
+  appointment?: {
+    id: string;
+    date: string;
+    slot: string;
+    address: string;
+    care_type?: { name: string };
+    patient?: { user?: { first_name: string; last_name: string } };
+  };
+}
+
+export const createVisitReport = async (data: {
+  appointment_id: string;
+  actes_realises?: string;
+  observations?: string;
+  medicaments_administres?: string;
+  suite_a_donner?: string;
+  pm_role: 'infirmier' | 'medecin';
+  pm_id: string;
+}): Promise<VisitReport> => {
+  const response = await fetch(`${baseUrl}/visit-reports`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${publicAnonKey}`
+    },
+    body: JSON.stringify(data)
+  });
+  const res = await handleResponse(response);
+  return res.report;
+};
+
+export const getVisitReportsAwaitingMedecin = async (): Promise<VisitReport[]> => {
+  const response = await fetch(`${baseUrl}/visit-reports/awaiting-medecin`, {
+    headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+  });
+  const res = await handleResponse(response);
+  return res.reports;
+};
+
+export const getVisitReportsForPatient = async (patientId: string): Promise<VisitReport[]> => {
+  const response = await fetch(`${baseUrl}/visit-reports/patient/${patientId}`, {
+    headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+  });
+  const res = await handleResponse(response);
+  return res.reports;
+};
+
+export const validateVisitReportByMedecin = async (reportId: string, medecinId: string): Promise<VisitReport> => {
+  const response = await fetch(`${baseUrl}/visit-reports/${reportId}/medecin-validate`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${publicAnonKey}`
+    },
+    body: JSON.stringify({ medecin_id: medecinId })
+  });
+  const res = await handleResponse(response);
+  return res.report;
+};
+
+export const approveVisitReportByPatient = async (reportId: string): Promise<VisitReport> => {
+  const response = await fetch(`${baseUrl}/visit-reports/${reportId}/patient-approve`, {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+  });
+  const res = await handleResponse(response);
+  return res.report;
+};
+
+export const medecinFranceConnectLogin = async (data: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  franceConnectId: string;
+}): Promise<{ id: string; name: string; email: string; type: 'medecin' }> => {
+  const response = await fetch(`${baseUrl}/api/medecin/franceconnect`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${publicAnonKey}`
+    },
+    body: JSON.stringify(data)
+  });
+  const res = await handleResponse(response);
+  return res.medecin;
+};

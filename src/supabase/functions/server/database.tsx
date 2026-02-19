@@ -737,3 +737,144 @@ export const deletePrescription = async (id: string): Promise<void> => {
   
   if (error) throw new Error(`Error deleting prescription: ${error.message}`);
 };
+
+// ============================================
+// VISIT REPORTS (workflow de validation de visite)
+// ============================================
+
+export interface VisitReport {
+  id: string;
+  appointment_id: string;
+  actes_realises: string | null;
+  observations: string | null;
+  medicaments_administres: string | null;
+  suite_a_donner: string | null;
+  pm_role: 'infirmier' | 'medecin';
+  pm_id: string;
+  workflow_step: 'awaiting_medecin' | 'awaiting_patient' | 'completed';
+  medecin_validated_at: string | null;
+  medecin_validator_id: string | null;
+  patient_approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const createVisitReport = async (data: {
+  appointment_id: string;
+  actes_realises?: string;
+  observations?: string;
+  medicaments_administres?: string;
+  suite_a_donner?: string;
+  pm_role: 'infirmier' | 'medecin';
+  pm_id: string;
+}): Promise<VisitReport> => {
+  const supabase = getClient();
+  // Si c'est un médecin, on saute l'étape de validation médecin
+  const workflow_step = data.pm_role === 'medecin' ? 'awaiting_patient' : 'awaiting_medecin';
+  // Si pm_role = 'medecin', la validation médecin est auto
+  const medecin_validated_at = data.pm_role === 'medecin' ? new Date().toISOString() : null;
+  const medecin_validator_id = data.pm_role === 'medecin' ? data.pm_id : null;
+
+  const { data: report, error } = await supabase
+    .from('visit_reports')
+    .insert({
+      ...data,
+      workflow_step,
+      medecin_validated_at,
+      medecin_validator_id,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(`Error creating visit report: ${error.message}`);
+  return report;
+};
+
+export const getVisitReportByAppointment = async (appointmentId: string): Promise<VisitReport | null> => {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('visit_reports')
+    .select('*')
+    .eq('appointment_id', appointmentId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Error fetching visit report: ${error.message}`);
+  return data;
+};
+
+// Rapports en attente de validation médecin (pour le dashboard médecin)
+export const getVisitReportsAwaitingMedecin = async (): Promise<(VisitReport & { appointment: any })[]> => {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('visit_reports')
+    .select(`
+      *,
+      appointment:appointments(
+        id, date, slot, address,
+        patient:patients!appointments_patient_id_fkey(
+          user:users(first_name, last_name)
+        ),
+        care_type:care_types(name)
+      )
+    `)
+    .eq('workflow_step', 'awaiting_medecin')
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(`Error fetching reports awaiting medecin: ${error.message}`);
+  return data || [];
+};
+
+// Rapports en attente d'approbation patient
+export const getVisitReportsForPatient = async (patientId: string): Promise<(VisitReport & { appointment: any })[]> => {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('visit_reports')
+    .select(`
+      *,
+      appointment:appointments(
+        id, date, slot, address,
+        care_type:care_types(name)
+      )
+    `)
+    .eq('workflow_step', 'awaiting_patient')
+    .eq('appointment.patient_id', patientId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(`Error fetching patient visit reports: ${error.message}`);
+  return (data || []).filter(r => r.appointment !== null);
+};
+
+export const validateVisitReportByMedecin = async (reportId: string, medecinId: string): Promise<VisitReport> => {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('visit_reports')
+    .update({
+      workflow_step: 'awaiting_patient',
+      medecin_validated_at: new Date().toISOString(),
+      medecin_validator_id: medecinId,
+    })
+    .eq('id', reportId)
+    .eq('workflow_step', 'awaiting_medecin')
+    .select()
+    .single();
+
+  if (error) throw new Error(`Error validating visit report: ${error.message}`);
+  return data;
+};
+
+export const approveVisitReportByPatient = async (reportId: string): Promise<VisitReport> => {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('visit_reports')
+    .update({
+      workflow_step: 'completed',
+      patient_approved_at: new Date().toISOString(),
+    })
+    .eq('id', reportId)
+    .eq('workflow_step', 'awaiting_patient')
+    .select()
+    .single();
+
+  if (error) throw new Error(`Error approving visit report: ${error.message}`);
+  return data;
+};

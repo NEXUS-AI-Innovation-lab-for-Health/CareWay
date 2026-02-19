@@ -62,51 +62,36 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
   const { t } = useLanguage();
   const [showProviders, setShowProviders] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-  const [devMode] = useState(true); // Development mode enabled
+  const [devMode] = useState(true);
 
   // Dev mode: Direct login bypass
   const handleDevLogin = async () => {
     try {
-      const mockFranceConnectData = {
-        firstName: 'Marie',
-        lastName: 'Dubois',
-        email: 'marie.dubois@infirmier.fr',
-        franceConnectId: `fc_dev_${Date.now()}`
-      };
+      const endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
+      const mockData = { firstName: 'Marie', lastName: 'Dubois', email: 'marie.dubois@infirmier.fr', franceConnectId: `fc_dev_${Date.now()}` };
 
-      console.log('🔧 DEV MODE: Attempting direct nurse login with:', mockFranceConnectData);
-      
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify(mockFranceConnectData)
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+        body: JSON.stringify(mockData)
       });
 
-      console.log('DEV MODE: API response status:', response.status);
-      
       const data = await response.json();
-      console.log('DEV MODE: Full API response:', JSON.stringify(data, null, 2));
 
-      if (response.ok && data.success && data.nurse) {
-        const nurseUser: User = {
-          id: data.nurse.id,
-          name: `${data.nurse.firstName} ${data.nurse.lastName}`,
-          email: data.nurse.email,
+      if (response.ok && data.success) {
+        const payload = data.nurse;
+        const loginUser: User = {
+          id: payload.id,
+          name: `${payload.firstName} ${payload.lastName}`,
+          email: payload.email,
           type: 'nurse'
         };
-        console.log('✅ DEV MODE: Login successful, user:', nurseUser);
-        onLogin(nurseUser);
+        onLogin(loginUser);
       } else {
-        const errorMsg = data.error || 'Erreur inconnue';
-        console.error('❌ DEV MODE: Authentication error:', errorMsg, 'Full response:', data);
-        alert(`Erreur d'authentification: ${errorMsg}\n\nVeuillez vérifier la console pour plus de détails.`);
+        alert(`Erreur: ${data.error || 'Erreur inconnue'}`);
       }
     } catch (error) {
-      console.error('❌ DEV MODE: Network error:', error);
-      alert(`Erreur de connexion au serveur: ${error instanceof Error ? error.message : 'Unknown error'}\n\nVeuillez vérifier la console pour plus de détails.`);
+      alert(`Erreur de connexion: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -127,34 +112,27 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
         franceConnectId: `fc_${providerId}_${Date.now()}`
       };
 
+      const endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
+
       try {
-        console.log('Attempting FranceConnect authentication with:', mockFranceConnectData);
-        
-        // Créer ou récupérer le compte infirmier via le backend
-        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`, {
+        const response = await fetch(endpoint, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
           body: JSON.stringify(mockFranceConnectData)
         });
 
-        console.log('FranceConnect API response status:', response.status);
-        
         const data = await response.json();
-        console.log('FranceConnect API response data:', data);
 
         if (response.ok && data.success) {
           // Connexion réussie
-          const nurseUser: User = {
-            id: data.nurse.id,
-            name: `${data.nurse.firstName} ${data.nurse.lastName}`,
-            email: data.nurse.email,
+          const payload = data.nurse;
+          const loginUser: User = {
+            id: payload.id,
+            name: `${payload.firstName} ${payload.lastName}`,
+            email: payload.email,
             type: 'nurse'
           };
-          console.log('Login successful, user:', nurseUser);
-          onLogin(nurseUser);
+          onLogin(loginUser);
         } else {
           const errorMsg = data.error || 'Erreur inconnue lors de l\'authentification';
           console.error('FranceConnect authentication error:', errorMsg, 'Full response:', data);

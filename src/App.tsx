@@ -5,6 +5,7 @@ import { ModernRegisterForm } from './components/ModernRegisterForm';
 import { FranceConnectLogin } from './components/FranceConnectLogin';
 import { PatientDashboard } from './components/PatientDashboard';
 import { NurseDashboard } from './components/NurseDashboard';
+import { MedecinDashboard } from './components/MedecinDashboard';
 import { Toaster } from './components/ui/sonner';
 import { LanguageContext } from './components/LanguageContext';
 import { translations } from './components/translations';
@@ -18,7 +19,7 @@ export type User = {
   email: string;
   phone?: string | null;
   address?: string | null;
-  type: 'patient' | 'nurse';
+  type: 'patient' | 'nurse' | 'medecin';
 };
 
 export default function App() {
@@ -41,8 +42,8 @@ export default function App() {
   };
 
   const handleFranceConnectLogin = (user: User) => {
-    // FranceConnect renvoie toujours un infirmier
-    setCurrentUser({ ...user, type: 'nurse' });
+    // FranceConnect renvoie un infirmier ou un médecin
+    setCurrentUser(user);
     setCurrentView('dashboard');
   };
 
@@ -107,6 +108,8 @@ export default function App() {
             onLogout={handleLogout}
             onUpdateUser={setCurrentUser}
           />
+        ) : currentUser.type === 'medecin' ? (
+          <MedecinDashboard user={currentUser} onLogout={handleLogout} />
         ) : (
           <NurseDashboard user={currentUser} onLogout={handleLogout} />
         )

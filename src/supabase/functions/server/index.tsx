@@ -1189,4 +1189,150 @@ app.get("/make-server-1b83ce4c/api/patient/:patientId/medical-info", async (c) =
   }
 });
 
+// ============================================
+// MÉDECIN AUTHENTICATION (FranceConnect)
+// ============================================
+
+app.post("/make-server-1b83ce4c/api/medecin/franceconnect", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { firstName, lastName, email, franceConnectId } = body;
+
+    if (!firstName || !lastName || !email || !franceConnectId) {
+      return c.json({ error: "Données FranceConnect manquantes" }, 400);
+    }
+
+    let user = await db.getUserByEmail(email);
+
+    if (!user) {
+      user = await db.createUser({
+        role: 'medecin',
+        email,
+        first_name: firstName,
+        last_name: lastName
+      });
+      // Les médecins partagent la table infirmiers pour l'instant
+      // (même structure, le rôle dans users distingue)
+      await db.createInfirmier(user.id);
+      await db.createInfirmierSettings(user.id);
+    }
+
+    return c.json({
+      success: true,
+      medecin: {
+        id: user.id,
+        email: user.email,
+        name: `${user.first_name} ${user.last_name}`,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        phone: user.phone,
+        type: 'medecin'
+      }
+    });
+  } catch (error) {
+    console.error("❌ Medecin FranceConnect error:", error);
+    return c.json({ error: "Erreur lors de l'authentification" }, 500);
+  }
+});
+
+// ============================================
+// VISIT REPORTS — Workflow de validation de visite
+// ============================================
+
+// Créer un compte-rendu (infirmier/médecin marque la visite terminée)
+app.post("/make-server-1b83ce4c/visit-reports", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { appointment_id, actes_realises, observations, medicaments_administres, suite_a_donner, pm_role, pm_id } = body;
+
+    if (!appointment_id || !pm_role || !pm_id) {
+      return c.json({ error: "appointment_id, pm_role et pm_id requis" }, 400);
+    }
+
+    // Marquer le RDV comme 'done'
+    const supabase = getSupabaseAdminClient();
+    await supabase.from('appointments').update({ status: 'done' }).eq('id', appointment_id);
+
+    // Créer le compte-rendu
+    const report = await db.createVisitReport({
+      appointment_id,
+      actes_realises: actes_realises || null,
+      observations: observations || null,
+      medicaments_administres: medicaments_administres || null,
+      suite_a_donner: suite_a_donner || null,
+      pm_role,
+      pm_id,
+    });
+
+    return c.json({ success: true, report });
+  } catch (error) {
+    console.error("❌ Error creating visit report:", error);
+    return c.json({ error: "Erreur lors de la création du compte-rendu" }, 500);
+  }
+});
+
+// Récupérer les comptes-rendus en attente de validation médecin
+app.get("/make-server-1b83ce4c/visit-reports/awaiting-medecin", async (c) => {
+  try {
+    const reports = await db.getVisitReportsAwaitingMedecin();
+    return c.json({ success: true, reports });
+  } catch (error) {
+    console.error("❌ Error fetching reports:", error);
+    return c.json({ error: "Erreur lors de la récupération" }, 500);
+  }
+});
+
+// Récupérer les comptes-rendus en attente d'approbation patient
+app.get("/make-server-1b83ce4c/visit-reports/patient/:patientId", async (c) => {
+  try {
+    const patientId = c.req.param('patientId');
+    const reports = await db.getVisitReportsForPatient(patientId);
+    return c.json({ success: true, reports });
+  } catch (error) {
+    console.error("❌ Error fetching patient reports:", error);
+    return c.json({ error: "Erreur lors de la récupération" }, 500);
+  }
+});
+
+// Médecin valide un compte-rendu
+app.patch("/make-server-1b83ce4c/visit-reports/:id/medecin-validate", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { medecin_id } = body;
+
+    if (!medecin_id) return c.json({ error: "medecin_id requis" }, 400);
+
+    const report = await db.validateVisitReportByMedecin(id, medecin_id);
+    return c.json({ success: true, report });
+  } catch (error) {
+    console.error("❌ Error validating report:", error);
+    return c.json({ error: "Erreur lors de la validation" }, 500);
+  }
+});
+
+// Patient approuve un compte-rendu
+app.patch("/make-server-1b83ce4c/visit-reports/:id/patient-approve", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const report = await db.approveVisitReportByPatient(id);
+    return c.json({ success: true, report });
+  } catch (error) {
+    console.error("❌ Error approving report:", error);
+    return c.json({ error: "Erreur lors de l'approbation" }, 500);
+  }
+});
+
+// Compte-rendu d'un RDV spécifique
+app.get("/make-server-1b83ce4c/visit-reports/appointment/:appointmentId", async (c) => {
+  try {
+    const appointmentId = c.req.param('appointmentId');
+    const report = await db.getVisitReportByAppointment(appointmentId);
+    return c.json({ success: true, report });
+  } catch (error) {
+    console.error("❌ Error fetching report:", error);
+    return c.json({ error: "Erreur lors de la récupération" }, 500);
+  }
+});
+
 Deno.serve(app.fetch);

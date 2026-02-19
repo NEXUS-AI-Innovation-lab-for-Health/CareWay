@@ -1,8 +1,6 @@
 # docker-compose.workflows.yml
 # Run from CareWay/docker/ (same directory as docker-compose.yml):
 #   docker compose -f docker-compose.workflows.yml up -d --build
-# Requires CareWay to be running first:
-#   docker compose up -d --build
 
 services:
 
@@ -24,7 +22,7 @@ services:
     image: kirito140/olga-backend:latest
     container_name: olga_api
     ports:
-      - "9091:9091"          # accessed by browser at http://localhost:9091
+      - "9091:9091"          # accessed by CareWay at http://localhost:9091
     environment:
       ADDRESS: 0.0.0.0
       PORT: 9091
@@ -36,58 +34,6 @@ services:
       - ../olga/config/apiKey.json:/app/config/apiKey.json:ro
     depends_on:
       - olga_mysql
-    restart: unless-stopped
-    networks:
-      - olga_workflows
-
-  # ── Olga Designer SPA ────────────────────────────────────────────────────────
-  olga_designer:
-    build:
-      context: ../olga               # Dockerfile.designer lives here
-      dockerfile: Dockerfile.designer
-    container_name: olga_designer
-    # Not exposed directly – accessed through nginx_workflows gateway
-    environment:
-      VITE_BACKEND_URL: http://localhost:9091
-    volumes:
-      - ../olga/config/config.json:/usr/share/nginx/html/config/config.json:ro
-    depends_on:
-      - olga_api
-    restart: unless-stopped
-    networks:
-      - olga_workflows
-
-  # ── Olga Admin SPA ───────────────────────────────────────────────────────────
-  olga_admin:
-    build:
-      context: ../olga               # Dockerfile.admin lives here
-      dockerfile: Dockerfile.admin
-    container_name: olga_admin
-    # Not exposed directly – accessed through nginx_workflows gateway
-    environment:
-      VITE_BACKEND_URL: http://localhost:9091
-    volumes:
-      - ../olga/config/config.json:/usr/share/nginx/html/config/config.json:ro
-    depends_on:
-      - olga_api
-    restart: unless-stopped
-    networks:
-      - olga_workflows
-
-  # ── Nginx Gateway ────────────────────────────────────────────────────────────
-  # Exposes:
-  #   http://localhost:3001/olga/designer/
-  #   http://localhost:3001/olga/admin/
-  nginx_workflows:
-    image: nginx:alpine
-    container_name: nginx_workflows
-    ports:
-      - "3001:80"
-    volumes:
-      - ./nginx.workflows.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - olga_designer
-      - olga_admin
     restart: unless-stopped
     networks:
       - olga_workflows

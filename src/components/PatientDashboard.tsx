@@ -148,6 +148,7 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
 
     fetchAppointments();
     fetchCareTypes();
+
   }, [user.id]);
 
   const upcomingAppointments = appointments
