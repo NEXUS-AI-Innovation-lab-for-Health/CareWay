@@ -43,16 +43,20 @@ wss.on('connection', (ws) => {
         // Notifier les autres participants
         rooms[data.roomId].forEach(client => {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
+            // Dire au membre existant qu'un nouveau est arrivé → il doit initier l'offre
             client.send(JSON.stringify({
               type: 'user-joined',
               username: data.username,
-              userId: data.username
+              userId: data.username,
+              shouldCreateOffer: true
             }));
             
+            // Dire au nouveau qui est déjà là → il attend l'offre, pas besoin d'en créer
             ws.send(JSON.stringify({
               type: 'user-joined',
               username: client.username,
-              userId: client.username
+              userId: client.username,
+              shouldCreateOffer: false
             }));
           }
         });

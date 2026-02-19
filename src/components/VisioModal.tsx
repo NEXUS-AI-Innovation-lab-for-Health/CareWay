@@ -189,19 +189,22 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         return prev;
       });
 
-      // Créer une connexion peer et envoyer une offre
-      setTimeout(async () => {
-        const pc = createPeerConnection(newUserId, ws);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+      // Seul le membre existant (shouldCreateOffer=true) crée l'offre
+      // L'autre attend de recevoir l'offre pour éviter le "glare" WebRTC
+      if (data.shouldCreateOffer) {
+        setTimeout(async () => {
+          const pc = createPeerConnection(newUserId, ws);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
 
-        ws.send(JSON.stringify({
-          type: 'offer',
-          offer: offer,
-          from: userName,
-          to: newUserId
-        }));
-      }, 500);
+          ws.send(JSON.stringify({
+            type: 'offer',
+            offer: offer,
+            from: userName,
+            to: newUserId
+          }));
+        }, 500);
+      }
     }
   };
 
@@ -272,8 +275,10 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         }));
       } else if (type === 'answer') {
         const pc = peerConnectionsRef.current[from];
-        if (pc) {
+        if (pc && pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        } else {
+          console.warn(`⚠️ Answer ignorée de ${from} — état actuel: ${pc?.signalingState}`);
         }
       } else if (type === 'ice-candidate') {
         const pc = peerConnectionsRef.current[from];
