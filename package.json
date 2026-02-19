@@ -58,8 +58,10 @@
       "scripts": {
             "dev": "vite",
             "build": "vite build",
-            "docker:start": "powershell -ExecutionPolicy Bypass -File ./docker/docker-helper.ps1 start",
-            "docker:stop": "powershell -ExecutionPolicy Bypass -File ./docker/docker-helper.ps1 stop",
-            "docker:clean": "powershell -ExecutionPolicy Bypass -File ./docker/docker-helper.ps1 clean"
+            "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+            "preview": "vite preview",
+            "docker:start": "docker compose -f docker/docker-compose.yml --profile local up -d --build",
+            "docker:stop": "docker compose -f docker/docker-compose.yml --profile local down",
+            "docker:clean": "docker compose -f docker/docker-compose.yml --profile local down -v"
       }
 }

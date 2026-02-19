@@ -58,5 +58,15 @@
       port: 3000,
       host: '0.0.0.0', // Pour accepter les connexions Docker
       open: false, // Désactivé pour Docker (évite les erreurs xdg-open)
+      // HMR WebSocket : le navigateur se connecte à localhost:3000/
+      hmr: {
+        host: 'localhost',
+        port: 3000,
+      },
+      // Polling obligatoire sur Windows avec volumes Docker (inotify non disponible)
+      watch: {
+        usePolling: true,
+        interval: 300,
+      },
     },
   });
