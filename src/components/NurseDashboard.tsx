@@ -173,8 +173,8 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const confirmedAppointments = appointments.filter(apt => apt.status === 'confirmed');
   const completedAppointments = appointments.filter(apt => apt.status === 'completed');
 
-  // Get today's date - Wednesday, January 28, 2026
-  const today = new Date('2026-01-28');
+  // Get today's date
+  const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
   // Get appointments for today
