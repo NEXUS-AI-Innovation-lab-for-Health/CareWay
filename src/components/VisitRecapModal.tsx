@@ -5,7 +5,7 @@ import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 import { CheckCircle, ClipboardList } from 'lucide-react';
 import * as api from '../services/api';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface VisitRecapModalProps {
   open: boolean;
@@ -63,7 +63,7 @@ export function VisitRecapModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog open={open} onOpenChange={(o: boolean) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">

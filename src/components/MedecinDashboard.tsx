@@ -5,7 +5,6 @@ import { Badge } from './ui/badge';
 import {
   LogOut,
   User,
-  ClipboardList,
   CheckCircle,
   Calendar,
   MapPin,
@@ -17,7 +16,7 @@ import * as api from '../services/api';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useLanguage } from './LanguageContext';
 import type { User as UserType } from '../App';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface MedecinDashboardProps {
   user: UserType;

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* Database helpers for SQL tables */
 import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
 

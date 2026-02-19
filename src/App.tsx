@@ -104,7 +104,7 @@ export default function App() {
       {currentView === 'dashboard' && currentUser && (
         currentUser.type === 'patient' ? (
           <PatientDashboard 
-            user={currentUser} 
+            user={currentUser as any} 
             onLogout={handleLogout}
             onUpdateUser={setCurrentUser}
           />

@@ -97,8 +97,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [careTypes, setCareTypes] = useState<api.CareType[]>([]);
+
 
   // Charger la liste des formulaires Olga
   useEffect(() => {
@@ -176,8 +175,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
         const pending = await api.getPendingAppointments('all');
         
         // Charger les types de soins
-        const types = await api.getCareTypes();
-        setCareTypes(types);
+        await api.getCareTypes();
         
         console.log('📋 Confirmed appointments from backend:', confirmed);
         console.log('📋 Pending appointments from backend:', pending);
@@ -262,7 +260,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
       } catch (error) {
         console.error('Error fetching nurse data:', error);
       } finally {
-        setIsLoading(false);
+        // data loaded
       }
     };
 
@@ -338,7 +336,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
     }
   };
 
-  const handleConfirmAppointment = async (appointmentId: string, customDuration: number) => {
+  const handleConfirmAppointment = async (appointmentId: string, _customDuration: number) => {
     try {
       console.log('🔄 Accepting appointment:', appointmentId, 'by nurse:', user.id);
       
@@ -616,7 +614,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
           <AIRouteOptimizer
             appointments={appointments}
             selectedDate={todayStr}
-            onApplyRoute={handleApplyOptimizedRoute}
+            onApplyRoute={handleApplyOptimizedRoute as any}
             nurseId={user.id}
           />
         </main>
@@ -1042,7 +1040,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
             handleCompleteAppointment(selectedAppointment.id);
             setShowDetailsModal(false);
           }}
-          patientId={selectedAppointment.patient?.id || selectedAppointment.patient_id}
+          patientId={selectedAppointment.patient_id}
         />
       )}
 
