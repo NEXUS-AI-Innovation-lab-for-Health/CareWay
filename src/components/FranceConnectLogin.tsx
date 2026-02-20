@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Shield, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Shield, ChevronRight, ArrowLeft, Stethoscope, Activity } from 'lucide-react';
 import type { User } from '../App';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -63,35 +63,65 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
   const [showProviders, setShowProviders] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [devMode] = useState(true);
+  const [pmRole, setPmRole] = useState<'infirmier' | 'medecin'>('infirmier');
 
   // Dev mode: Direct login bypass
   const handleDevLogin = async () => {
-    try {
-      const endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
-      const mockData = { firstName: 'Marie', lastName: 'Dubois', email: 'marie.dubois@infirmier.fr', franceConnectId: `fc_dev_${Date.now()}` };
+    const isMedecin = pmRole === 'medecin';
+    const endpoint = isMedecin
+      ? `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/medecin/franceconnect`
+      : `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
 
+    const mockData = isMedecin
+      ? { firstName: 'Sophie', lastName: 'Martin', email: 'dr.sophie.martin@medecin.fr', franceConnectId: `fc_dev_medecin_${Date.now()}` }
+      : { firstName: 'Marie', lastName: 'Dubois', email: 'marie.dubois@infirmier.fr', franceConnectId: `fc_dev_${Date.now()}` };
+
+    try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
         body: JSON.stringify(mockData)
       });
 
-      const data = await response.json();
+      const raw = await response.text();
+      let data: any;
+      try { data = JSON.parse(raw); } catch { data = null; }
 
-      if (response.ok && data.success) {
-        const payload = data.nurse;
-        const loginUser: User = {
+      if (data && response.ok && data.success) {
+        const payload = data.nurse || data.medecin;
+        onLogin({
           id: payload.id,
           name: `${payload.firstName} ${payload.lastName}`,
           email: payload.email,
-          type: 'nurse'
-        };
-        onLogin(loginUser);
-      } else {
-        alert(`Erreur: ${data.error || 'Erreur inconnue'}`);
+          type: isMedecin ? 'medecin' : 'nurse'
+        });
+        return;
       }
+
+      // Fallback local (edge function non encore déployée pour médecin)
+      if (isMedecin) {
+        onLogin({
+          id: 'a1b2c3d4-0000-4000-8000-000000000002',
+          name: 'Dr. Sophie Martin',
+          email: 'dr.sophie.martin@medecin.fr',
+          type: 'medecin'
+        });
+        return;
+      }
+
+      alert(`Erreur: ${data?.error || raw.slice(0, 120)}`);
     } catch (error) {
-      alert(`Erreur de connexion: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (isMedecin) {
+        // Fallback local si réseau indisponible
+        onLogin({
+          id: 'a1b2c3d4-0000-4000-8000-000000000002',
+          name: 'Dr. Sophie Martin',
+          email: 'dr.sophie.martin@medecin.fr',
+          type: 'medecin'
+        });
+      } else {
+        alert(`Erreur de connexion: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
   };
 
@@ -106,13 +136,15 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
     setTimeout(async () => {
       // Données simulées de FranceConnect
       const mockFranceConnectData = {
-        firstName: 'Marie',
-        lastName: 'Dubois',
-        email: 'marie.dubois@infirmier.fr',
+        firstName: pmRole === 'medecin' ? 'Sophie' : 'Marie',
+        lastName: pmRole === 'medecin' ? 'Martin' : 'Dubois',
+        email: pmRole === 'medecin' ? 'dr.sophie.martin@medecin.fr' : 'marie.dubois@infirmier.fr',
         franceConnectId: `fc_${providerId}_${Date.now()}`
       };
 
-      const endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
+      const endpoint = pmRole === 'medecin'
+        ? `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/medecin/franceconnect`
+        : `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
 
       try {
         const response = await fetch(endpoint, {
@@ -121,16 +153,25 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
           body: JSON.stringify(mockFranceConnectData)
         });
 
-        const data = await response.json();
+        const raw = await response.text();
+        let data: any;
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          alert(`Erreur serveur (route non déployée ?): ${raw.slice(0, 120)}`);
+          setSelectedProvider(null);
+          setShowProviders(false);
+          return;
+        }
 
         if (response.ok && data.success) {
           // Connexion réussie
-          const payload = data.nurse;
+          const payload = data.nurse || data.medecin;
           const loginUser: User = {
             id: payload.id,
             name: `${payload.firstName} ${payload.lastName}`,
             email: payload.email,
-            type: 'nurse'
+            type: pmRole === 'medecin' ? 'medecin' : 'nurse'
           };
           onLogin(loginUser);
         } else {
@@ -270,7 +311,7 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
                 </div>
               </div>
               <div>
-                <CardTitle className="text-2xl">{t('dashboard.nurse_space')}</CardTitle>
+                <CardTitle className="text-2xl">Se connecter avec FranceConnect</CardTitle>
                 <CardDescription className="mt-2">
                   {t('auth.franceconnect.desc')}
                 </CardDescription>
@@ -279,6 +320,34 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
           </CardHeader>
           
           <CardContent className="space-y-6">
+            {/* Sélecteur de rôle */}
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Vous êtes :</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPmRole('infirmier')}
+                  className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                    pmRole === 'infirmier'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <Activity className="h-4 w-4" />
+                  Infirmier(e)
+                </button>
+                <button
+                  onClick={() => setPmRole('medecin')}
+                  className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                    pmRole === 'medecin'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <Stethoscope className="h-4 w-4" />
+                  Médecin
+                </button>
+              </div>
+            </div>
             <div className="space-y-4">
               {/* MODE DÉVELOPPEMENT - Connexion directe */}
               {devMode && (
