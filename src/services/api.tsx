@@ -14,14 +14,14 @@ export interface User {
   lastName: string;
   phone: string | null;
   address?: string | null;
-  type: 'patient' | 'nurse';
+  type: 'patient' | 'nurse' | 'medecin';
 }
 
 export interface Appointment {
   id: string;
   patient_id: string;
   infirmier_id: string | null;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'done';
   date: string;
   slot: 'morning' | 'afternoon' | 'evening';
   care_type_id: string;
@@ -346,7 +346,15 @@ export const getVisitReportsAwaitingMedecin = async (): Promise<VisitReport[]> =
     headers: { 'Authorization': `Bearer ${publicAnonKey}` }
   });
   const res = await handleResponse(response);
-  return res.reports;
+  return res.reports || res.data || [];
+};
+
+export const getVisitReportByAppointment = async (appointmentId: string): Promise<VisitReport | null> => {
+  const response = await fetch(`${baseUrl}/visit-reports/appointment/${appointmentId}`, {
+    headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+  });
+  const res = await handleResponse(response);
+  return res.data;
 };
 
 export const getVisitReportsForPatient = async (patientId: string): Promise<VisitReport[]> => {
@@ -357,14 +365,21 @@ export const getVisitReportsForPatient = async (patientId: string): Promise<Visi
   return res.reports;
 };
 
-export const validateVisitReportByMedecin = async (reportId: string, medecinId: string): Promise<VisitReport> => {
+export const validateVisitReportByMedecin = async (
+  reportId: string, 
+  medecinId: string,
+  medecinFormData?: any
+): Promise<VisitReport> => {
   const response = await fetch(`${baseUrl}/visit-reports/${reportId}/medecin-validate`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`
     },
-    body: JSON.stringify({ medecin_id: medecinId })
+    body: JSON.stringify({ 
+      medecin_id: medecinId,
+      medecin_form_data: medecinFormData
+    })
   });
   const res = await handleResponse(response);
   return res.report;

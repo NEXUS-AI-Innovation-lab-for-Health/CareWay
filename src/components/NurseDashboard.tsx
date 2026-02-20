@@ -19,17 +19,20 @@ import {
   Sun,
   Moon,
   Navigation,
-  FileText,
   Search,
-  ChevronRight
+  ChevronRight,
+  FileCheck,
+  FileText
 } from 'lucide-react';
 import { AppointmentDetailsModal } from './AppointmentDetailsModal';
 import { AppointmentConfirmDialog } from './AppointmentConfirmDialog';
 import { AIRouteOptimizer } from './AIRouteOptimizer';
 import { NurseSettings } from './NurseSettings';
 import { VisitRecapModal } from './VisitRecapModal';
+import { MedecinValidationsModal } from './MedecinValidationsModal';
 import type { User as UserType } from '../App';
 import * as api from '../services/api';
+import { toast } from 'sonner';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useLanguage } from './LanguageContext';
 
@@ -49,7 +52,7 @@ interface Appointment {
   type: string;
   careTypeId?: string;  // ID du type de soin
   duration?: number;  // Durée en minutes
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'done' | 'cancelled';
   isUrgent: boolean;
   // Backend fields
   patient_id?: string;
@@ -97,6 +100,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showValidations, setShowValidations] = useState(false);
 
 
   // Charger la liste des formulaires Olga
@@ -268,7 +272,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   }, [user.id]);
 
   const confirmedAppointments = appointments.filter(apt => apt.status === 'confirmed');
-  const completedAppointments = appointments.filter(apt => apt.status === 'completed');
+  const completedAppointments = appointments.filter(apt => apt.status === 'done');
 
   // Get today's date - Wednesday, January 28, 2026
   const today = new Date(); // Use current system date
@@ -446,11 +450,20 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
     }
   };
 
-  const handleRecapSuccess = (appointmentId: string) => {
-    // Marquer localement comme 'done'
-    setAppointments(prev =>
-      prev.map(apt => apt.id === appointmentId ? { ...apt, status: 'completed' as const } : apt)
-    );
+  const handleRecapSuccess = async (appointmentId: string) => {
+    try {
+      // Mettre à jour le statut dans la base de données
+      await api.updateAppointment(appointmentId, { status: 'done' });
+      
+      // Marquer localement comme 'done'
+      setAppointments(prev =>
+        prev.map(apt => apt.id === appointmentId ? { ...apt, status: 'done' as const } : apt)
+      );
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du rendez-vous:', error);
+      toast.error('Le compte-rendu est créé, mais le statut du rendez-vous n\'a pas pu être mis à jour');
+    }
+    
     setShowRecapModal(false);
     setRecapAppointment(null);
   };
@@ -637,13 +650,17 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
               <span className="text-gray-600 hidden sm:inline">{t('dashboard.nurse_space')}</span>
             </div>
             <div className="flex items-center gap-2 sm:gap-4">
-              <Button variant="ghost" size="sm" onClick={() => setShowForms(true)} className="hidden sm:flex">
-                <FileText className="h-4 w-4 mr-2" />
-                Formulaires
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setShowForms(true)} className="sm:hidden">
-                <FileText className="h-4 w-4" />
-              </Button>
+              {user.type === 'medecin' && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setShowValidations(true)} className="hidden sm:flex">
+                    <FileCheck className="h-4 w-4 mr-2" />
+                    Validations
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => setShowValidations(true)} className="sm:hidden">
+                    <FileCheck className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setShowSettings(true)} className="hidden sm:flex">
                 <Settings className="h-4 w-4 mr-2" />
                 {t('common.settings')}
@@ -1051,10 +1068,18 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
           onClose={() => { setShowRecapModal(false); setRecapAppointment(null); }}
           appointmentId={recapAppointment.id}
           pmId={user.id}
-          pmRole="infirmier"
+          pmRole={user.type === 'medecin' ? 'medecin' : 'infirmier'}
           patientName={recapAppointment.patientName}
           careType={recapAppointment.type}
           onSuccess={handleRecapSuccess}
+        />
+      )}
+
+      {/* Medecin Validations Modal */}
+      {showValidations && user.type === 'medecin' && (
+        <MedecinValidationsModal
+          medecinId={user.id}
+          onClose={() => setShowValidations(false)}
         />
       )}
     </div>

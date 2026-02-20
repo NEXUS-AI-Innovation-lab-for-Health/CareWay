@@ -65,64 +65,27 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
   const [devMode] = useState(true);
   const [pmRole, setPmRole] = useState<'infirmier' | 'medecin'>('infirmier');
 
-  // Dev mode: Direct login bypass
+  // Dev mode: Direct login bypass avec comptes de test
   const handleDevLogin = async () => {
     const isMedecin = pmRole === 'medecin';
-    const endpoint = isMedecin
-      ? `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/medecin/franceconnect`
-      : `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
-
-    const mockData = isMedecin
-      ? { firstName: 'Sophie', lastName: 'Martin', email: 'dr.sophie.martin@medecin.fr', franceConnectId: `fc_dev_medecin_${Date.now()}` }
-      : { firstName: 'Marie', lastName: 'Dubois', email: 'marie.dubois@infirmier.fr', franceConnectId: `fc_dev_${Date.now()}` };
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
-        body: JSON.stringify(mockData)
-      });
-
-      const raw = await response.text();
-      let data: any;
-      try { data = JSON.parse(raw); } catch { data = null; }
-
-      if (data && response.ok && data.success) {
-        const payload = data.nurse || data.medecin;
-        onLogin({
-          id: payload.id,
-          name: `${payload.firstName} ${payload.lastName}`,
-          email: payload.email,
-          type: isMedecin ? 'medecin' : 'nurse'
-        });
-        return;
-      }
-
-      // Fallback local (edge function non encore déployée pour médecin)
-      if (isMedecin) {
-        onLogin({
-          id: 'a1b2c3d4-0000-4000-8000-000000000002',
-          name: 'Dr. Sophie Martin',
+    
+    // Utiliser les IDs fixes des comptes de test
+    const mockUser = isMedecin
+      ? {
+          id: '00000000-0000-0000-0000-000000000001', // Dr Sophie Martin
+          name: 'Dr Sophie Martin',
           email: 'dr.sophie.martin@medecin.fr',
-          type: 'medecin'
-        });
-        return;
-      }
+          type: 'medecin' as const
+        }
+      : {
+          id: '19e73865-1677-46c1-a982-648feae25dc3', // Marie Dubois (ID existant)
+          name: 'Marie Dubois',
+          email: 'marie.dubois@infirmier.fr',
+          type: 'nurse' as const
+        };
 
-      alert(`Erreur: ${data?.error || raw.slice(0, 120)}`);
-    } catch (error) {
-      if (isMedecin) {
-        // Fallback local si réseau indisponible
-        onLogin({
-          id: 'a1b2c3d4-0000-4000-8000-000000000002',
-          name: 'Dr. Sophie Martin',
-          email: 'dr.sophie.martin@medecin.fr',
-          type: 'medecin'
-        });
-      } else {
-        alert(`Erreur de connexion: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    }
+    // Connexion directe sans appel API en mode dev
+    onLogin(mockUser);
   };
 
   const handleFranceConnectClick = () => {

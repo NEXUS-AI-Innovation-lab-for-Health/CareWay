@@ -108,6 +108,7 @@ export default function App() {
             onUpdateUser={setCurrentUser}
           />
         ) : (
+          // Médecin et Infirmier utilisent le même dashboard
           <NurseDashboard user={currentUser} onLogout={handleLogout} />
         )
       )}
