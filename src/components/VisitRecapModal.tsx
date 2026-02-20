@@ -75,31 +75,25 @@ export function VisitRecapModal({
     checkExistingReport();
   }, [open, appointmentId]);
 
-  // Charger le formulaire Olga approprié selon le rôle
+  // Charger le formulaire Olga approprié selon le rôle via le workflow
   useEffect(() => {
     if (!open || existingReport) return;
     
     const fetchWorkflow = async () => {
       setIsLoadingWorkflow(true);
       try {
-        // Charger le formulaire approprié selon le rôle
-        // Form_Patient1 pour l'infirmier, Form_Patient2 pour le médecin
-        const formId = pmRole === 'infirmier' ? 'Form_Patient1' : 'Form_Patient2';
-        
-        // Charger en parallèle le formulaire et les types de soins
-        const [formResponse, careTypesData] = await Promise.all([
-          fetch(`http://localhost:9091/forms/getFromID/${formId}`),
+        // 🔄 Récupération via le workflow Olga au lieu d'appel direct
+        const [formData, careTypesData] = await Promise.all([
+          api.getFormForRole('RapportPatient', pmRole),
           api.getCareTypes()
         ]);
         
-        if (!formResponse.ok) {
-          throw new Error(`HTTP error! status: ${formResponse.status}`);
+        if (!formData) {
+          throw new Error(`Aucun formulaire trouvé pour le rôle ${pmRole} dans le workflow RapportPatient`);
         }
         
-        const data = await formResponse.json();
-        
         // Adapter la structure de réponse du formulaire
-        let workflowFields = data.form || [];
+        let workflowFields = formData.form || [];
         
         // Remplacer les options du champ "Type_soins" par les types de soins de la base
         workflowFields = workflowFields.map((field: OlgaWorkflowField) => {
@@ -116,10 +110,10 @@ export function VisitRecapModal({
         });
         
         const workflowData: OlgaWorkflow = {
-          workflow_id: data.form_id,
-          workflow_label: data.form_label,
+          workflow_id: formData.form_id,
+          workflow_label: formData.form_label,
           workflow: workflowFields,
-          workflow_version: data.form_version
+          workflow_version: formData.form_version
         };
         
         setWorkflowData(workflowData);

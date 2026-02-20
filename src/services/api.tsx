@@ -411,3 +411,204 @@ export const medecinFranceConnectLogin = async (data: {
   const res = await handleResponse(response);
   return res.medecin;
 };
+
+// ============================================
+// OLGA WORKFLOWS
+// ============================================
+
+const OLGA_BASE_URL = 'http://localhost:9091';
+
+export interface OlgaWorkflowNode {
+  id: string;
+  type: 'start' | 'end' | 'form' | 'save';
+  position: { x: number | string; y: number };
+  data: {
+    type?: string;
+    form_id?: string;
+    form_label?: string;
+    form_groups?: string[];
+    form_actors?: string[];
+    collectionId?: string;
+    collectionLabel?: string;
+  };
+}
+
+export interface OlgaWorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  animated?: boolean;
+}
+
+export interface OlgaWorkflow {
+  workflow_id: string;
+  workflow_label: string;
+  nodes: OlgaWorkflowNode[];
+  edges: OlgaWorkflowEdge[];
+  groups: string[];
+  actors: string[];
+  created_at?: { seconds: number; nanos: number };
+  last_updated?: { seconds: number; nanos: number };
+}
+
+export interface OlgaFormField {
+  unique_id: string;
+  field_key: string;
+  field_label: string;
+  field_type: string;
+  field_required?: boolean;
+  field_hint?: string;
+  field_options?: {
+    options: Array<{ label: string; value?: string }>;
+    source?: string;
+  };
+}
+
+export interface OlgaForm {
+  form_id: string;
+  form_label: string;
+  form_category?: string;
+  form_version?: string;
+  form: OlgaFormField[];
+}
+
+/**
+ * Récupère un workflow complet depuis Olga par son ID
+ */
+export const getOlgaWorkflow = async (workflowId: string): Promise<OlgaWorkflow> => {
+  const response = await fetch(`${OLGA_BASE_URL}/getWorkflowById_v2/${workflowId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch workflow ${workflowId}: ${response.statusText}`);
+  }
+  return await response.json();
+};
+
+/**
+ * Récupère un formulaire depuis Olga par son ID
+ */
+export const getOlgaForm = async (formId: string): Promise<OlgaForm> => {
+  const response = await fetch(`${OLGA_BASE_URL}/forms/getFromID/${formId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch form ${formId}: ${response.statusText}`);
+  }
+  return await response.json();
+};
+
+/**
+ * Récupère tous les formulaires disponibles dans Olga
+ */
+export const getOlgaForms = async (): Promise<OlgaForm[]> => {
+  const response = await fetch(`${OLGA_BASE_URL}/forms/getAll`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch forms: ${response.statusText}`);
+  }
+  return await response.json();
+};
+
+/**
+ * Détermine le prochain nœud du workflow basé sur le nœud actuel
+ */
+export const getNextWorkflowNode = (
+  workflow: OlgaWorkflow,
+  currentNodeId: string
+): OlgaWorkflowNode | null => {
+  const edge = workflow.edges.find(e => e.source === currentNodeId);
+  if (!edge) return null;
+  return workflow.nodes.find(n => n.id === edge.target) || null;
+};
+
+/**
+ * Récupère le premier nœud de type 'form' dans le workflow
+ */
+export const getFirstFormNode = (workflow: OlgaWorkflow): OlgaWorkflowNode | null => {
+  const startNode = workflow.nodes.find(n => n.type === 'start');
+  if (!startNode) return null;
+  
+  let currentNode = startNode;
+  while (currentNode) {
+    if (currentNode.type === 'form') return currentNode;
+    const nextNode = getNextWorkflowNode(workflow, currentNode.id);
+    if (!nextNode) return null;
+    currentNode = nextNode;
+  }
+  
+  return null;
+};
+
+/**
+ * Récupère tous les nœuds de type 'form' dans l'ordre du workflow
+ */
+export const getFormNodesInOrder = (workflow: OlgaWorkflow): OlgaWorkflowNode[] => {
+  const formNodes: OlgaWorkflowNode[] = [];
+  const startNode = workflow.nodes.find(n => n.type === 'start');
+  if (!startNode) return formNodes;
+  
+  let currentNode = startNode;
+  const visited = new Set<string>();
+  
+  while (currentNode && !visited.has(currentNode.id)) {
+    visited.add(currentNode.id);
+    if (currentNode.type === 'form') {
+      formNodes.push(currentNode);
+    }
+    const nextNode = getNextWorkflowNode(workflow, currentNode.id);
+    if (!nextNode) break;
+    currentNode = nextNode;
+  }
+  
+  return formNodes;
+};
+
+/**
+ * Récupère le formulaire approprié pour un rôle donné dans le workflow
+ */
+export const getFormForRole = async (
+  workflowId: string,
+  role: 'infirmier' | 'medecin' | 'patient'
+): Promise<OlgaForm | null> => {
+  const workflow = await getOlgaWorkflow(workflowId);
+  const formNodes = getFormNodesInOrder(workflow);
+  
+  // Mapping des rôles vers les groupes Olga
+  const roleToGroup: Record<string, string> = {
+    'infirmier': 'Infirmier',
+    'medecin': 'Doctor',
+    'patient': 'Patient'
+  };
+  
+  const targetGroup = roleToGroup[role];
+  
+  // Logique spécifique selon le rôle et la position dans le workflow
+  let formNode: OlgaWorkflowNode | undefined;
+  
+  if (role === 'infirmier') {
+    // L'infirmier obtient le PREMIER formulaire qui contient "Infirmier"
+    formNode = formNodes.find(node => 
+      node.data.form_groups?.includes('Infirmier')
+    );
+  } else if (role === 'medecin') {
+    // Le médecin obtient le formulaire qui est UNIQUEMENT pour Doctor (sans Infirmier)
+    // OU le deuxième formulaire du workflow s'il contient Doctor
+    formNode = formNodes.find(node => 
+      node.data.form_groups?.includes('Doctor') && 
+      !node.data.form_groups?.includes('Infirmier')
+    );
+    
+    // Si pas trouvé, prendre le dernier formulaire avec Doctor
+    if (!formNode) {
+      const doctorForms = formNodes.filter(node => 
+        node.data.form_groups?.includes('Doctor')
+      );
+      formNode = doctorForms[doctorForms.length - 1];
+    }
+  } else {
+    // Pour les autres rôles, chercher le premier formulaire correspondant
+    formNode = formNodes.find(node => 
+      node.data.form_groups?.includes(targetGroup)
+    );
+  }
+  
+  if (!formNode || !formNode.data.form_id) return null;
+  
+  return await getOlgaForm(formNode.data.form_id);
+};

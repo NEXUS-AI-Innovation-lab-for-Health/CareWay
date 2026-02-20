@@ -97,27 +97,25 @@ export function MedecinValidationsModal({ medecinId, onClose }: MedecinValidatio
       setLoadingForm(true);
       setSelectedReport(reports.find(r => r.id === reportId) || null);
       
-      // Charger Form_Patient2 pour le médecin
-      const formResponse = await fetch('http://localhost:9091/forms/getFromID/Form_Patient2');
+      // 🔄 Charger le formulaire médecin via le workflow Olga
+      const formData = await api.getFormForRole('RapportPatient', 'medecin');
       
-      if (!formResponse.ok) {
-        throw new Error(`HTTP error! status: ${formResponse.status}`);
+      if (!formData) {
+        throw new Error('Aucun formulaire trouvé pour le rôle médecin dans le workflow RapportPatient');
       }
       
-      const data = await formResponse.json();
-      
       const workflowData: OlgaWorkflow = {
-        workflow_id: data.form_id,
-        workflow_label: data.form_label,
-        workflow: data.form || [],
-        workflow_version: data.form_version
+        workflow_id: formData.form_id,
+        workflow_label: formData.form_label,
+        workflow: formData.form || [],
+        workflow_version: formData.form_version
       };
       
       setMedecinForm(workflowData);
       
       // Initialiser les valeurs
       const initialValues: Record<string, string | boolean> = {};
-      (data.form || []).forEach((field: OlgaWorkflowField) => {
+      (formData.form || []).forEach((field: OlgaWorkflowField) => {
         initialValues[field.unique_id] = field.field_type === 'checkbox' ? false : '';
       });
       setMedecinFormValues(initialValues);
@@ -362,9 +360,37 @@ export function MedecinValidationsModal({ medecinId, onClose }: MedecinValidatio
 
                     {selectedReport?.id === report.id && medecinForm && !loadingForm && (
                       <div className="space-y-4 border-t pt-4">
-                        <h4 className="font-semibold text-green-900">Formulaire de validation médecin</h4>
-                        <div className="space-y-3">
-                          {medecinForm.workflow.map(field => renderFormField(field))}
+                        <div className="max-h-[65vh] overflow-y-auto pr-2 space-y-4">
+                          {/* Résumé automatique des données infirmier */}
+                          {report.workflow_data?.workflow_values && (
+                            <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                              <h4 className="font-semibold text-blue-900 flex items-center gap-2 mb-3">
+                                <FileText className="h-4 w-4" />
+                                Compte-rendu de l'infirmier ({report.workflow_data.workflow_label || 'Form_Patient1'})
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {Object.entries(report.workflow_data.workflow_values).map(([key, value]) => (
+                                  <div key={key} className="bg-white rounded px-3 py-2">
+                                    <span className="text-xs font-medium text-gray-600 block mb-1">{key}</span>
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {typeof value === 'boolean' ? (value ? '✓ Oui' : '✗ Non') : String(value)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Formulaire de validation médecin (Form_Patient2) */}
+                          <div className="bg-green-50 rounded-lg p-4 border-l-4 border-green-500">
+                            <h4 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
+                              <CheckCircle className="h-4 w-4" />
+                              Validation médecin ({medecinForm.workflow_label || 'Form_Patient2'})
+                            </h4>
+                            <div className="space-y-3">
+                              {medecinForm.workflow.map(field => renderFormField(field))}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}

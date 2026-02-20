@@ -106,16 +106,24 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   // Charger la liste des formulaires Olga
   useEffect(() => {
     if (!showForms || olgaForms.length > 0) return;
-    setFormsLoading(true);
-    fetch('http://localhost:9091/forms/getAll')
-      .then(r => r.json())
-      .then((data: OlgaFormFull[]) =>
+    
+    const loadForms = async () => {
+      setFormsLoading(true);
+      try {
+        // 🔄 Récupération via l'API Olga
+        const data = await api.getOlgaForms();
         setOlgaForms(
           data.map(f => ({ form_id: f.form_id, form_label: f.form_label, form_category: f.form_category }))
-        )
-      )
-      .catch(() => setOlgaForms([]))
-      .finally(() => setFormsLoading(false));
+        );
+      } catch (error) {
+        console.error('Erreur lors du chargement des formulaires Olga:', error);
+        setOlgaForms([]);
+      } finally {
+        setFormsLoading(false);
+      }
+    };
+    
+    loadForms();
   }, [showForms, olgaForms.length]);
 
   const handleSelectForm = async (formId: string) => {
@@ -123,14 +131,14 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
     setFormLoading(true);
     setFormValues({});
     try {
-      const res = await fetch(`http://localhost:9091/forms/getFromID/${formId}`);
-      const data: OlgaFormFull = await res.json();
+      // 🔄 Récupération via l'API Olga
+      const data = await api.getOlgaForm(formId);
       setSelectedFormData(data);
       const init: Record<string, string | boolean> = {};
       (data.form || []).forEach(f => { init[f.unique_id] = f.field_type === 'checkbox' ? false : ''; });
       setFormValues(init);
-    } catch {
-      // API unreachable
+    } catch (error) {
+      console.error('Erreur lors du chargement du formulaire:', error);
     } finally {
       setFormLoading(false);
     }
