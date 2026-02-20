@@ -315,7 +315,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
         return <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{t('dashboard.pending')}</Badge>;
       case 'confirmed':
         return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">{t('dashboard.confirmed')}</Badge>;
-      case 'completed':
+      case 'done':
         return <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100">{t('dashboard.completed')}</Badge>;
       case 'cancelled':
         return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{t('dashboard.cancelled')}</Badge>;
