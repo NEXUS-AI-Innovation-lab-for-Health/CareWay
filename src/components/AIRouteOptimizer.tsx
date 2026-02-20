@@ -57,7 +57,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
   const [showComparison, setShowComparison] = useState(false);
   const [currentSelectedDate, setCurrentSelectedDate] = useState(selectedDate);
 
-  // Charger le mode de transport depuis localStorage
+  // Charge le mode de transport sauvegardé par l'infirmière dans localStorage.
+  // Retourne 'car' par défaut si aucun mode n'est trouvé ou si la valeur est invalide.
   const getTransportMode = (): 'car' | 'bike' | 'transit' | 'walking' => {
     try {
       const saved = localStorage.getItem('nurseTransportMode');
@@ -70,7 +71,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     return 'car'; // Par défaut
   };
 
-  // Calculer le temps de trajet en minutes selon le mode de transport
+  // Calcule le temps de trajet estimé en minutes à partir d'une distance en km.
+  // Utilise des vitesses moyennes en ville selon le mode de transport (voiture, vélo, transport, marche).
   const getTravelTime = (distanceKm: number, mode?: 'car' | 'bike' | 'transit' | 'walking'): number => {
     const transportMode = mode || getTransportMode();
     
@@ -85,7 +87,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     return Math.round(distanceKm * speeds[transportMode]);
   };
 
-  // Obtenir l'icône et le label du mode de transport
+  // Retourne l'icône (emoji) et le label traduit correspondant au mode de transport actuel.
+  // Utilisé dans l'interface pour afficher visuellement le mode sélectionné.
   const getTransportInfo = () => {
     const mode = getTransportMode();
     const icons = {
@@ -97,7 +100,9 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     return icons[mode];
   };
 
-  // Charger les durées personnalisées depuis localStorage
+  // Récupère la durée personnalisée d'un type de soin depuis localStorage.
+  // Si l'infirmière a défini une durée spécifique dans ses paramètres, elle est utilisée.
+  // Sinon, retourne la durée par défaut définie dans les constantes de l'application.
   const getCustomDuration = (careType: string): number => {
     try {
       const saved = localStorage.getItem('nurseCustomDurations');
@@ -114,7 +119,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     return getDefaultDuration(careType);
   };
 
-  // Charger la marge de sécurité
+  // Récupère la marge de sécurité (en minutes) ajoutée entre chaque rendez-vous.
+  // Cette marge permet d'absorber les retards éventuels. Valeur par défaut : 10 minutes.
   const getSafetyMargin = (): number => {
     try {
       const saved = localStorage.getItem('nurseSafetyMargin');
@@ -125,7 +131,9 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     }
   };
 
-  // Charger les paramètres de pause
+  // Récupère les paramètres de pause automatique depuis localStorage.
+  // - duration : durée de chaque pause en minutes (défaut : 15 min)
+  // - frequency : intervalle de travail avant qu'une pause soit insérée (défaut : 120 min)
   const getPauseSettings = (): { duration: number; frequency: number } => {
     try {
       const duration = localStorage.getItem('nursePauseDuration');
@@ -143,7 +151,9 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
   // Filtrer les rendez-vous pour la date sélectionnée
   const todayAppointments = appointments.filter(apt => apt.date === currentSelectedDate && apt.status === 'confirmed');
 
-  // Fonction pour extraire les coordonnées approximatives depuis l'adresse (simulation)
+  // Génère des coordonnées GPS approximatives à partir d'une adresse (simulation).
+  // Utilise un hash simple de la chaîne d'adresse pour produire des coordonnées
+  // autour de Lyon (lat ~45.75, lng ~4.85). En production, ceci serait remplacé par un géocodeur réel.
   const getCoordinates = (location: string): { lat: number; lng: number } => {
     // Simulation de géolocalisation basée sur le hash de l'adresse
     const hash = location.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -153,7 +163,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     };
   };
 
-  // Calculer la distance entre deux points (formule de Haversine simplifiée)
+  // Calcule la distance en kilomètres entre deux points GPS en utilisant la formule de Haversine.
+  // Cette formule tient compte de la courbure de la Terre pour un calcul précis à vol d'oiseau.
   const calculateDistance = (coord1: { lat: number; lng: number }, coord2: { lat: number; lng: number }): number => {
     const R = 6371; // Rayon de la Terre en km
     const dLat = (coord2.lat - coord1.lat) * Math.PI / 180;
@@ -165,14 +176,21 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     return R * c;
   };
 
-  // Convertir minutes en format heure (ex: 510 -> "08:30")
+  // Convertit un nombre total de minutes depuis minuit en format horaire "HH:MM".
+  // Exemple : 510 → "08:30", 840 → "14:00".
   const minutesToTime = (minutes: number): string => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
   };
 
-  // Algorithme d'optimisation avec assignation d'horaires
+  // Algorithme principal d'optimisation de tournée (V1 — sans IA).
+  // 1. Sépare les RDV par créneau horaire (matin, après-midi, soir) et par urgence
+  // 2. Optimise l'ordre géographique dans chaque créneau (algorithme du plus proche voisin)
+  // 3. Assigne des horaires précis en tenant compte des durées de soin, temps de trajet,
+  //    marges de sécurité et pauses automatiques
+  // 4. Compare avec l'ordre naïf (non optimisé) pour calculer les gains de distance et temps
+  // Retourne un objet OptimizedRoute avec les RDV réordonnés et les métriques.
   const optimizeRoute = (): OptimizedRoute => {
     if (todayAppointments.length === 0) {
       return {
@@ -202,7 +220,10 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
       return groups;
     };
 
-    // Optimiser un groupe par proximité géographique
+    // Optimise l'ordre des rendez-vous d'un groupe par proximité géographique.
+    // Utilise l'algorithme glouton du "plus proche voisin" : part du premier RDV (ou d'une urgence),
+    // puis choisit toujours le RDV le plus proche géographiquement comme suivant.
+    // Les RDV urgents ont une priorité et peuvent être choisis même s'ils sont légèrement plus loin.
     const optimizeGroupByProximity = (group: Appointment[]): Appointment[] => {
       if (group.length <= 1) return group;
       
@@ -247,7 +268,12 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
       return optimized;
     };
 
-    // Assigner des horaires dans un créneau
+    // Assigne des horaires précis à chaque RDV dans un créneau donné (matin/après-midi/soir).
+    // Optimise d'abord l'ordre par proximité, puis parcourt séquentiellement en calculant :
+    // - La durée de chaque visite (personnalisée par type de soin)
+    // - Le temps de trajet entre deux adresses consécutives
+    // - L'insertion automatique de pauses quand le temps de travail accumulé dépasse la fréquence configurée
+    // - La marge de sécurité ajoutée après chaque visite
     const assignTimesToSlot = (group: Appointment[], slotKey: string): Appointment[] => {
       const range = timeSlotRanges[slotKey];
       if (!range) return group;
@@ -375,6 +401,9 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     };
   };
 
+  // Lance l'optimisation algorithmique (V1) avec un délai simulé de 2 secondes
+  // pour donner un feedback visuel d'un traitement en cours.
+  // Appelle optimizeRoute() qui utilise l'algorithme du plus proche voisin.
   const handleOptimize = () => {
     setIsOptimizing(true);
     
@@ -387,7 +416,11 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     }, 2000);
   };
 
-  // Optimisation avec IA (Groq/Mixtral)
+  // Lance l'optimisation avancée via IA (V2) en appelant l'API Groq/Mixtral.
+  // Récupère d'abord les paramètres de l'infirmière depuis Supabase, puis envoie
+  // les rendez-vous du jour à l'endpoint d'optimisation IA qui retourne un ordre optimisé
+  // avec des horaires suggérés et une explication textuelle de la logique utilisée.
+  // En cas d'erreur, affiche une alerte et ne modifie pas l'état.
   const handleOptimizeWithAI = async () => {
     setIsOptimizing(true);
     
@@ -488,6 +521,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     }
   };
 
+  // Applique l'itinéraire optimisé en remontant les rendez-vous réordonnés au composant parent
+  // via le callback onApplyRoute, puis masque la vue de comparaison.
   const handleApplyRoute = () => {
     if (optimizedRoute) {
       onApplyRoute(optimizedRoute.appointments);
@@ -495,6 +530,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     }
   };
 
+  // Retourne l'icône Lucide correspondant au créneau horaire (matin → soleil levant,
+  // après-midi → soleil, soir → lune). Utilisé dans l'affichage de chaque RDV.
   const getTimeSlotIcon = (timeSlot?: string) => {
     switch (timeSlot) {
       case 'morning':
@@ -508,11 +545,15 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     }
   };
 
+  // Récupère l'icône (emoji) et le label d'un type de soin à partir de la liste
+  // des types définis dans les constantes. Retourne un fallback générique si le type est inconnu.
   const getCareTypeInfo = (careType: string) => {
     const care = careTypes.find(c => c.id === careType);
     return care ? { icon: care.icon, label: care.label } : { icon: '🩺', label: careType };
   };
 
+  // Formate une date ISO (ex: "2026-02-20") en texte lisible en français
+  // (ex: "vendredi 20 février 2026") pour l'affichage dans l'interface.
   const formatSelectedDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('fr-FR', { 

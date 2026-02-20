@@ -286,9 +286,8 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
 
             <div className="text-center space-y-4">
               <div className="flex justify-center">
-                <div className="flex items-center gap-1">
-                  <span className="text-2xl">DW</span>
-                  <span className="text-2xl">™</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">CareWay</span>
                 </div>
               </div>
               <div>
