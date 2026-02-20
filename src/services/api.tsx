@@ -305,6 +305,7 @@ export interface VisitReport {
   medecin_validated_at: string | null;
   medecin_validator_id: string | null;
   patient_approved_at: string | null;
+  workflow_data?: any; // Données du workflow Olga
   created_at: string;
   updated_at: string;
   // Joined fields (when queried with appointment)
@@ -326,6 +327,7 @@ export const createVisitReport = async (data: {
   suite_a_donner?: string;
   pm_role: 'infirmier' | 'medecin';
   pm_id: string;
+  workflow_data?: any; // Données du workflow Olga
 }): Promise<VisitReport> => {
   const response = await fetch(`${baseUrl}/visit-reports`, {
     method: 'POST',

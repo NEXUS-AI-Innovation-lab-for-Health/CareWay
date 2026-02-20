@@ -1263,6 +1263,7 @@ app.post("/make-server-1b83ce4c/visit-reports", async (c) => {
       suite_a_donner: suite_a_donner || null,
       pm_role,
       pm_id,
+      workflow_data: body.workflow_data || null,
     });
 
     return c.json({ success: true, report });

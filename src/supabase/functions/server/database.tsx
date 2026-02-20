@@ -768,6 +768,7 @@ export const createVisitReport = async (data: {
   suite_a_donner?: string;
   pm_role: 'infirmier' | 'medecin';
   pm_id: string;
+  workflow_data?: any; // Données du workflow Olga
 }): Promise<VisitReport> => {
   const supabase = getClient();
   // Si c'est un médecin, on saute l'étape de validation médecin

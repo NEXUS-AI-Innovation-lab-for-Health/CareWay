@@ -1,11 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
-import { CheckCircle, ClipboardList } from 'lucide-react';
+import { CheckCircle, ClipboardList, Loader2 } from 'lucide-react';
 import * as api from '../services/api';
 import { toast } from 'sonner';
+
+interface OlgaWorkflowField {
+  unique_id: string;
+  field_key: string;
+  field_label: string;
+  field_type: string;
+  field_required?: boolean;
+  field_hint?: string;
+}
+
+interface OlgaWorkflow {
+  workflow_id: string;
+  workflow_label: string;
+  workflow: OlgaWorkflowField[];
+  workflow_version?: string;
+}
 
 interface VisitRecapModalProps {
   open: boolean;
@@ -28,34 +44,160 @@ export function VisitRecapModal({
   careType,
   onSuccess
 }: VisitRecapModalProps) {
-  const [actes, setActes] = useState('');
-  const [observations, setObservations] = useState('');
-  const [medicaments, setMedicaments] = useState('');
-  const [suite, setSuite] = useState('');
+  const [workflowData, setWorkflowData] = useState<OlgaWorkflow | null>(null);
+  const [workflowValues, setWorkflowValues] = useState<Record<string, string | boolean>>({});
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const nextStep = pmRole === 'medecin' ? 'approbation patient' : 'validation médecin';
 
-  const handleSubmit = async () => {
-    if (!actes.trim()) {
-      toast.error('Les actes réalisés sont obligatoires');
-      return;
+  // Charger le formulaire Olga approprié selon le rôle
+  useEffect(() => {
+    if (!open) return;
+    
+    const fetchWorkflow = async () => {
+      setIsLoadingWorkflow(true);
+      try {
+        // Charger le formulaire approprié selon le rôle
+        // Form_Patient1 pour l'infirmier, Form_Patient2 pour le médecin
+        const formId = pmRole === 'infirmier' ? 'Form_Patient1' : 'Form_Patient2';
+        const response = await fetch(`http://localhost:9091/forms/getFromID/${formId}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Adapter la structure de réponse du formulaire
+        const workflowData: OlgaWorkflow = {
+          workflow_id: data.form_id,
+          workflow_label: data.form_label,
+          workflow: data.form || [], // Le formulaire utilise 'form' au lieu de 'workflow'
+          workflow_version: data.form_version
+        };
+        
+        setWorkflowData(workflowData);
+        
+        // Initialiser les valeurs du formulaire
+        const initialValues: Record<string, string | boolean> = {};
+        (data.form || []).forEach((field: OlgaWorkflowField) => {
+          initialValues[field.unique_id] = field.field_type === 'checkbox' ? false : '';
+        });
+        setWorkflowValues(initialValues);
+      } catch (error) {
+        console.error('Erreur lors du chargement du workflow:', error);
+        toast.error('Impossible de charger le formulaire de compte-rendu');
+      } finally {
+        setIsLoadingWorkflow(false);
+      }
+    };
+
+    fetchWorkflow();
+  }, [open, pmRole]);
+
+  // Fonction pour rendre un champ du workflow
+  const renderWorkflowField = (field: OlgaWorkflowField) => {
+    const label = field.field_label || field.field_key || 'Champ';
+    const value = workflowValues[field.unique_id];
+    const onChange = (v: string | boolean) => 
+      setWorkflowValues(prev => ({ ...prev, [field.unique_id]: v }));
+
+    if (field.field_type === 'checkbox') {
+      return (
+        <div key={field.unique_id} className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id={field.unique_id}
+            checked={value as boolean}
+            onChange={(e) => onChange(e.target.checked)}
+            className="h-4 w-4 accent-blue-600 rounded border-gray-300"
+          />
+          <Label htmlFor={field.unique_id} className="text-sm font-medium cursor-pointer">
+            {label}
+            {field.field_required && <span className="text-red-500 ml-1">*</span>}
+          </Label>
+        </div>
+      );
     }
+
+    if (field.field_type === 'textarea') {
+      return (
+        <div key={field.unique_id}>
+          <Label htmlFor={field.unique_id} className="text-sm font-medium">
+            {label}
+            {field.field_required && <span className="text-red-500 ml-1">*</span>}
+          </Label>
+          <Textarea
+            id={field.unique_id}
+            value={value as string}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.field_hint}
+            className="mt-1 h-24 resize-none"
+          />
+        </div>
+      );
+    }
+
+    // Pour les autres types (text, email, number, date, etc.)
+    const inputType = field.field_type.startsWith('input:') 
+      ? field.field_type.split(':')[1] 
+      : field.field_type;
+
+    return (
+      <div key={field.unique_id}>
+        <Label htmlFor={field.unique_id} className="text-sm font-medium">
+          {label}
+          {field.field_required && <span className="text-red-500 ml-1">*</span>}
+        </Label>
+        <input
+          type={inputType}
+          id={field.unique_id}
+          value={value as string}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.field_hint}
+          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+    );
+  };
+
+  const handleSubmit = async () => {
+    // Vérifier les champs requis
+    if (workflowData?.workflow && Array.isArray(workflowData.workflow)) {
+      const requiredFields = workflowData.workflow.filter(f => f.field_required);
+      const missingFields = requiredFields.filter(f => {
+        const value = workflowValues[f.unique_id];
+        return f.field_type === 'checkbox' ? !value : !value || (value as string).trim() === '';
+      });
+
+      if (missingFields.length > 0) {
+        toast.error(`Veuillez remplir tous les champs obligatoires`);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
+      // Préparer les données du workflow pour l'envoi
+      const workflowDataToSend = {
+        workflow_id: workflowData?.workflow_id,
+        workflow_label: workflowData?.workflow_label,
+        workflow_values: workflowValues
+      };
+
       await api.createVisitReport({
         appointment_id: appointmentId,
-        actes_realises: actes,
-        observations: observations || undefined,
-        medicaments_administres: medicaments || undefined,
-        suite_a_donner: suite || undefined,
         pm_role: pmRole,
         pm_id: pmId,
-      });
+        workflow_data: workflowDataToSend,
+      } as any);
+
       toast.success(`Compte-rendu envoyé — en attente de ${nextStep}`);
       onSuccess(appointmentId);
       onClose();
     } catch (err) {
+      console.error('Erreur lors de l\'envoi du compte-rendu:', err);
       toast.error('Erreur lors de l\'envoi du compte-rendu');
     } finally {
       setIsSubmitting(false);
@@ -83,57 +225,28 @@ export function VisitRecapModal({
               : '→ Après envoi : validation requise par un médecin, puis approbation patient'}
           </div>
 
-          <div>
-            <Label htmlFor="actes" className="text-sm font-medium">
-              Actes réalisés <span className="text-red-500">*</span>
-            </Label>
-            <Textarea
-              id="actes"
-              value={actes}
-              onChange={(e) => setActes(e.target.value)}
-              placeholder="Pansement, injection, prise de constantes…"
-              className="mt-1 h-24 resize-none"
-            />
-          </div>
+          {/* Loading state */}
+          {isLoadingWorkflow && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              <span className="ml-2 text-sm text-gray-600">Chargement du formulaire...</span>
+            </div>
+          )}
 
-          <div>
-            <Label htmlFor="observations" className="text-sm font-medium">
-              Observations cliniques
-            </Label>
-            <Textarea
-              id="observations"
-              value={observations}
-              onChange={(e) => setObservations(e.target.value)}
-              placeholder="État général du patient, évolution…"
-              className="mt-1 h-20 resize-none"
-            />
-          </div>
+          {/* Workflow fields */}
+          {!isLoadingWorkflow && workflowData?.workflow && Array.isArray(workflowData.workflow) && workflowData.workflow.length > 0 && (
+            <div className="space-y-4">
+              {workflowData.workflow.map(field => renderWorkflowField(field))}
+            </div>
+          )}
 
-          <div>
-            <Label htmlFor="medicaments" className="text-sm font-medium">
-              Médicaments administrés
-            </Label>
-            <Textarea
-              id="medicaments"
-              value={medicaments}
-              onChange={(e) => setMedicaments(e.target.value)}
-              placeholder="Nom, dose, voie d'administration…"
-              className="mt-1 h-20 resize-none"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="suite" className="text-sm font-medium">
-              Suite à donner
-            </Label>
-            <Textarea
-              id="suite"
-              value={suite}
-              onChange={(e) => setSuite(e.target.value)}
-              placeholder="Prochaine visite, consignes, alertes médecin…"
-              className="mt-1 h-20 resize-none"
-            />
-          </div>
+          {/* Error state - fallback */}
+          {!isLoadingWorkflow && (!workflowData || !workflowData.workflow || !Array.isArray(workflowData.workflow) || workflowData.workflow.length === 0) && (
+            <div className="text-center py-8 text-gray-500">
+              <p>Impossible de charger le formulaire.</p>
+              <p className="text-sm mt-2">Vérifiez que le service Olga est accessible.</p>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-2">
             <Button variant="outline" className="flex-1" onClick={onClose} disabled={isSubmitting}>
@@ -142,7 +255,7 @@ export function VisitRecapModal({
             <Button
               className="flex-1 bg-green-600 hover:bg-green-700 text-white"
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLoadingWorkflow || !workflowData?.workflow || !Array.isArray(workflowData.workflow) || workflowData.workflow.length === 0}
             >
               <CheckCircle className="h-4 w-4 mr-2" />
               {isSubmitting ? 'Envoi…' : 'Valider et envoyer'}
