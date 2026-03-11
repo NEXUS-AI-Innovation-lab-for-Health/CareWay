@@ -56,7 +56,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         wsRef.current.close();
       }
     };
-  }, [isOpen]);
+  }, [isOpen]); 
 
   useEffect(() => {
     if (joined && localStreamRef.current && localVideoRef.current) {
