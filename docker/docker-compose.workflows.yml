@@ -1,0 +1,46 @@
+# docker-compose.workflows.yml
+# Run from CareWay/docker/ (same directory as docker-compose.yml):
+#   docker compose -f docker-compose.workflows.yml up -d --build
+
+services:
+
+  # ── MySQL ────────────────────────────────────────────────────────────────────
+  olga_mysql:
+    image: mysql:latest
+    container_name: olga_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: olga
+    volumes:
+      - olga_mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - olga_workflows
+
+  # ── Olga Backend API ─────────────────────────────────────────────────────────
+  olga_api:
+    image: kirito140/olga-backend:latest
+    container_name: olga_api
+    ports:
+      - "9091:9091"          # accessed by CareWay at http://localhost:9091
+    environment:
+      ADDRESS: 0.0.0.0
+      PORT: 9091
+      MYSQL_URL: jdbc:mysql://olga_mysql:3306/olga
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: rootpassword
+      FIREBASE_KEY_PATH: /app/config/apiKey.json
+    volumes:
+      - ../olga/config/apiKey.json:/app/config/apiKey.json:ro
+    depends_on:
+      - olga_mysql
+    restart: unless-stopped
+    networks:
+      - olga_workflows
+
+networks:
+  olga_workflows:
+    driver: bridge
+
+volumes:
+  olga_mysql_data:

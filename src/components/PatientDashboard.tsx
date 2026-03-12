@@ -68,7 +68,7 @@ interface Appointment {
   type: string;
   status: 'upcoming' | 'completed' | 'cancelled';
   // Backend fields
-  backendStatus?: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  backendStatus?: 'pending' | 'confirmed' | 'cancelled' | 'done';
   slot?: 'morning' | 'afternoon' | 'evening';
   patient_comment?: string | null;
 }
@@ -128,7 +128,7 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
           type: careTypeName,
           status: apt.status === 'pending' ? 'upcoming' : 
                   apt.status === 'confirmed' ? 'upcoming' :
-                  apt.status === 'completed' ? 'completed' : 'cancelled',
+                  apt.status === 'done' ? 'completed' : 'cancelled',
           backendStatus: apt.status,
           slot: apt.slot,
           patient_comment: apt.patient_comment
@@ -156,6 +156,7 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
 
     fetchAppointments();
     fetchCareTypes();
+
   }, [user.id]);
 
   // Setup WebSocket connection for incoming calls

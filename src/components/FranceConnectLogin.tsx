@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Shield, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Shield, ChevronRight, ArrowLeft, Stethoscope, Activity } from 'lucide-react';
 import type { User } from '../App';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -62,52 +62,30 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
   const { t } = useLanguage();
   const [showProviders, setShowProviders] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-  const [devMode] = useState(true); // Development mode enabled
+  const [devMode] = useState(true);
+  const [pmRole, setPmRole] = useState<'infirmier' | 'medecin'>('infirmier');
 
-  // Dev mode: Direct login bypass
+  // Dev mode: Direct login bypass avec comptes de test
   const handleDevLogin = async () => {
-    try {
-      const mockFranceConnectData = {
-        firstName: 'Marie',
-        lastName: 'Dubois',
-        email: 'marie.dubois@infirmier.fr',
-        franceConnectId: `fc_dev_${Date.now()}`
-      };
-
-      console.log('🔧 DEV MODE: Attempting direct nurse login with:', mockFranceConnectData);
-      
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify(mockFranceConnectData)
-      });
-
-      console.log('DEV MODE: API response status:', response.status);
-      
-      const data = await response.json();
-      console.log('DEV MODE: Full API response:', JSON.stringify(data, null, 2));
-
-      if (response.ok && data.success && data.nurse) {
-        const nurseUser: User = {
-          id: data.nurse.id,
-          name: `${data.nurse.firstName} ${data.nurse.lastName}`,
-          email: data.nurse.email,
-          type: 'nurse'
+    const isMedecin = pmRole === 'medecin';
+    
+    // Utiliser les IDs fixes des comptes de test
+    const mockUser = isMedecin
+      ? {
+          id: '00000000-0000-0000-0000-000000000001', // Dr Sophie Martin
+          name: 'Dr Sophie Martin',
+          email: 'dr.sophie.martin@medecin.fr',
+          type: 'medecin' as const
+        }
+      : {
+          id: '19e73865-1677-46c1-a982-648feae25dc3', // Marie Dubois (ID existant)
+          name: 'Marie Dubois',
+          email: 'marie.dubois@infirmier.fr',
+          type: 'nurse' as const
         };
-        console.log('✅ DEV MODE: Login successful, user:', nurseUser);
-        onLogin(nurseUser);
-      } else {
-        const errorMsg = data.error || 'Erreur inconnue';
-        console.error('❌ DEV MODE: Authentication error:', errorMsg, 'Full response:', data);
-        alert(`Erreur d'authentification: ${errorMsg}\n\nVeuillez vérifier la console pour plus de détails.`);
-      }
-    } catch (error) {
-      console.error('❌ DEV MODE: Network error:', error);
-      alert(`Erreur de connexion au serveur: ${error instanceof Error ? error.message : 'Unknown error'}\n\nVeuillez vérifier la console pour plus de détails.`);
-    }
+
+    // Connexion directe sans appel API en mode dev
+    onLogin(mockUser);
   };
 
   const handleFranceConnectClick = () => {
@@ -121,40 +99,44 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
     setTimeout(async () => {
       // Données simulées de FranceConnect
       const mockFranceConnectData = {
-        firstName: 'Marie',
-        lastName: 'Dubois',
-        email: 'marie.dubois@infirmier.fr',
+        firstName: pmRole === 'medecin' ? 'Sophie' : 'Marie',
+        lastName: pmRole === 'medecin' ? 'Martin' : 'Dubois',
+        email: pmRole === 'medecin' ? 'dr.sophie.martin@medecin.fr' : 'marie.dubois@infirmier.fr',
         franceConnectId: `fc_${providerId}_${Date.now()}`
       };
 
+      const endpoint = pmRole === 'medecin'
+        ? `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/medecin/franceconnect`
+        : `https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`;
+
       try {
-        console.log('Attempting FranceConnect authentication with:', mockFranceConnectData);
-        
-        // Créer ou récupérer le compte infirmier via le backend
-        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-1b83ce4c/api/nurse/franceconnect`, {
+        const response = await fetch(endpoint, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
           body: JSON.stringify(mockFranceConnectData)
         });
 
-        console.log('FranceConnect API response status:', response.status);
-        
-        const data = await response.json();
-        console.log('FranceConnect API response data:', data);
+        const raw = await response.text();
+        let data: any;
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          alert(`Erreur serveur (route non déployée ?): ${raw.slice(0, 120)}`);
+          setSelectedProvider(null);
+          setShowProviders(false);
+          return;
+        }
 
         if (response.ok && data.success) {
           // Connexion réussie
-          const nurseUser: User = {
-            id: data.nurse.id,
-            name: `${data.nurse.firstName} ${data.nurse.lastName}`,
-            email: data.nurse.email,
-            type: 'nurse'
+          const payload = data.nurse || data.medecin;
+          const loginUser: User = {
+            id: payload.id,
+            name: `${payload.firstName} ${payload.lastName}`,
+            email: payload.email,
+            type: pmRole === 'medecin' ? 'medecin' : 'nurse'
           };
-          console.log('Login successful, user:', nurseUser);
-          onLogin(nurseUser);
+          onLogin(loginUser);
         } else {
           const errorMsg = data.error || 'Erreur inconnue lors de l\'authentification';
           console.error('FranceConnect authentication error:', errorMsg, 'Full response:', data);
@@ -291,7 +273,7 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
                 </div>
               </div>
               <div>
-                <CardTitle className="text-2xl">{t('dashboard.nurse_space')}</CardTitle>
+                <CardTitle className="text-2xl">Se connecter avec FranceConnect</CardTitle>
                 <CardDescription className="mt-2">
                   {t('auth.franceconnect.desc')}
                 </CardDescription>
@@ -300,6 +282,34 @@ export function FranceConnectLogin({ onLogin, onBack }: FranceConnectLoginProps)
           </CardHeader>
           
           <CardContent className="space-y-6">
+            {/* Sélecteur de rôle */}
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Vous êtes :</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPmRole('infirmier')}
+                  className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                    pmRole === 'infirmier'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <Activity className="h-4 w-4" />
+                  Infirmier(e)
+                </button>
+                <button
+                  onClick={() => setPmRole('medecin')}
+                  className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                    pmRole === 'medecin'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <Stethoscope className="h-4 w-4" />
+                  Médecin
+                </button>
+              </div>
+            </div>
             <div className="space-y-4">
               {/* MODE DÉVELOPPEMENT - Connexion directe */}
               {devMode && (

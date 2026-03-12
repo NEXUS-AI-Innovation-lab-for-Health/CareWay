@@ -18,7 +18,7 @@ export type User = {
   email: string;
   phone?: string | null;
   address?: string | null;
-  type: 'patient' | 'nurse';
+  type: 'patient' | 'nurse' | 'medecin';
 };
 
 export default function App() {
@@ -41,8 +41,8 @@ export default function App() {
   };
 
   const handleFranceConnectLogin = (user: User) => {
-    // FranceConnect renvoie toujours un infirmier
-    setCurrentUser({ ...user, type: 'nurse' });
+    // FranceConnect renvoie un infirmier ou un médecin
+    setCurrentUser(user);
     setCurrentView('dashboard');
   };
 
@@ -103,11 +103,12 @@ export default function App() {
       {currentView === 'dashboard' && currentUser && (
         currentUser.type === 'patient' ? (
           <PatientDashboard 
-            user={currentUser} 
+            user={currentUser as any} 
             onLogout={handleLogout}
             onUpdateUser={setCurrentUser}
           />
         ) : (
+          // Médecin et Infirmier utilisent le même dashboard
           <NurseDashboard user={currentUser} onLogout={handleLogout} />
         )
       )}

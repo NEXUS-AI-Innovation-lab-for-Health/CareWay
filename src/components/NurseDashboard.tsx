@@ -19,15 +19,22 @@ import {
   Sun,
   Moon,
   Navigation,
-  Video
+  Video,
+  Search,
+  ChevronRight,
+  FileCheck,
+  FileText
 } from 'lucide-react';
 import { AppointmentDetailsModal } from './AppointmentDetailsModal';
 import { AppointmentConfirmDialog } from './AppointmentConfirmDialog';
 import { AIRouteOptimizer } from './AIRouteOptimizer';
 import { NurseSettings } from './NurseSettings';
 import { VisioModal } from './VisioModal';
+import { VisitRecapModal } from './VisitRecapModal';
+import { MedecinValidationsModal } from './MedecinValidationsModal';
 import type { User as UserType } from '../App';
 import * as api from '../services/api';
+import { toast } from 'sonner';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useLanguage } from './LanguageContext';
 
@@ -47,12 +54,32 @@ interface Appointment {
   type: string;
   careTypeId?: string;  // ID du type de soin
   duration?: number;  // Durée en minutes
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'done' | 'cancelled';
   isUrgent: boolean;
   // Backend fields
   patient_id?: string;
   infirmier_id?: string | null;
   patient_comment?: string | null;
+}
+
+interface OlgaField {
+  unique_id: string;
+  field_key: string;
+  field_label: string;
+  field_type: string;
+  field_required?: boolean;
+  field_hint?: string;
+}
+
+interface OlgaFormSummary {
+  form_id: string;
+  form_label: string;
+  form_category?: string;
+}
+
+interface OlgaFormFull extends OlgaFormSummary {
+  form: OlgaField[];
+  form_version?: string;
 }
 
 export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
@@ -62,6 +89,16 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const [pendingAppointments, setPendingAppointments] = useState<Appointment[]>([]);
   const [showRouteOptimizer, setShowRouteOptimizer] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showForms, setShowForms] = useState(false);
+  const [olgaForms, setOlgaForms] = useState<OlgaFormSummary[]>([]);
+  const [selectedFormId, setSelectedFormId] = useState<string | null>(null);
+  const [selectedFormData, setSelectedFormData] = useState<OlgaFormFull | null>(null);
+  const [formValues, setFormValues] = useState<Record<string, string | boolean>>({});
+  const [formsLoading, setFormsLoading] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formsSearch, setFormsSearch] = useState('');
+  const [showRecapModal, setShowRecapModal] = useState(false);
+  const [recapAppointment, setRecapAppointment] = useState<Appointment | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -69,6 +106,81 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const [visioAppointment, setVisioAppointment] = useState<Appointment | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [careTypes, setCareTypes] = useState<api.CareType[]>([]);
+  const [showValidations, setShowValidations] = useState(false);
+
+
+  // Charger la liste des formulaires Olga
+  useEffect(() => {
+    if (!showForms || olgaForms.length > 0) return;
+    
+    const loadForms = async () => {
+      setFormsLoading(true);
+      try {
+        // 🔄 Récupération via l'API Olga
+        const data = await api.getOlgaForms();
+        setOlgaForms(
+          data.map(f => ({ form_id: f.form_id, form_label: f.form_label, form_category: f.form_category }))
+        );
+      } catch (error) {
+        console.error('Erreur lors du chargement des formulaires Olga:', error);
+        setOlgaForms([]);
+      } finally {
+        setFormsLoading(false);
+      }
+    };
+    
+    loadForms();
+  }, [showForms, olgaForms.length]);
+
+  const handleSelectForm = async (formId: string) => {
+    setSelectedFormId(formId);
+    setFormLoading(true);
+    setFormValues({});
+    try {
+      // 🔄 Récupération via l'API Olga
+      const data = await api.getOlgaForm(formId);
+      setSelectedFormData(data);
+      const init: Record<string, string | boolean> = {};
+      (data.form || []).forEach(f => { init[f.unique_id] = f.field_type === 'checkbox' ? false : ''; });
+      setFormValues(init);
+    } catch (error) {
+      console.error('Erreur lors du chargement du formulaire:', error);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const renderOlgaField = (field: OlgaField) => {
+    const base = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+    const label = field.field_label || field.field_key || 'Champ';
+    const val = formValues[field.unique_id];
+    const onChange = (v: string | boolean) => setFormValues(prev => ({ ...prev, [field.unique_id]: v }));
+
+    if (field.field_type === 'checkbox') {
+      return (
+        <div key={field.unique_id} className='flex items-center gap-2'>
+          <input type='checkbox' id={field.unique_id} checked={val as boolean} onChange={e => onChange(e.target.checked)} className='h-4 w-4 accent-blue-600' />
+          <label htmlFor={field.unique_id} className='text-sm text-gray-700'>{label}</label>
+          {field.field_required && <span className='text-red-500 text-xs'>*</span>}
+        </div>
+      );
+    }
+    if (field.field_type === 'textarea') {
+      return (
+        <div key={field.unique_id} className='space-y-1'>
+          <label className='text-sm font-medium text-gray-700'>{label}{field.field_required && <span className='text-red-500 ml-1'>*</span>}</label>
+          <textarea value={val as string} onChange={e => onChange(e.target.value)} className={`${base} min-h-[80px] resize-y`} placeholder={field.field_hint} />
+        </div>
+      );
+    }
+    const inputType = field.field_type.startsWith('input:') ? field.field_type.split(':')[1] : field.field_type;
+    return (
+      <div key={field.unique_id} className='space-y-1'>
+        <label className='text-sm font-medium text-gray-700'>{label}{field.field_required && <span className='text-red-500 ml-1'>*</span>}</label>
+        <input type={inputType} value={val as string} onChange={e => onChange(e.target.value)} className={base} placeholder={field.field_hint} />
+      </div>
+    );
+  };
 
   // Charger les rendez-vous depuis le backend
   useEffect(() => {
@@ -81,8 +193,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
         const pending = await api.getPendingAppointments('all');
         
         // Charger les types de soins
-        const types = await api.getCareTypes();
-        setCareTypes(types);
+        await api.getCareTypes();
         
         console.log('📋 Confirmed appointments from backend:', confirmed);
         console.log('📋 Pending appointments from backend:', pending);
@@ -167,7 +278,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
       } catch (error) {
         console.error('Error fetching nurse data:', error);
       } finally {
-        setIsLoading(false);
+        // data loaded
       }
     };
 
@@ -175,10 +286,10 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   }, [user.id]);
 
   const confirmedAppointments = appointments.filter(apt => apt.status === 'confirmed');
-  const completedAppointments = appointments.filter(apt => apt.status === 'completed');
+  const completedAppointments = appointments.filter(apt => apt.status === 'done');
 
-  // Get today's date
-  const today = new Date();
+  // Get today's date - Wednesday, January 28, 2026
+  const today = new Date(); // Use current system date
   const todayStr = today.toISOString().split('T')[0];
 
   // Get appointments for today
@@ -218,7 +329,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
         return <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{t('dashboard.pending')}</Badge>;
       case 'confirmed':
         return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">{t('dashboard.confirmed')}</Badge>;
-      case 'completed':
+      case 'done':
         return <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100">{t('dashboard.completed')}</Badge>;
       case 'cancelled':
         return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{t('dashboard.cancelled')}</Badge>;
@@ -243,7 +354,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
     }
   };
 
-  const handleConfirmAppointment = async (appointmentId: string, customDuration: number) => {
+  const handleConfirmAppointment = async (appointmentId: string, _customDuration: number) => {
     try {
       console.log('🔄 Accepting appointment:', appointmentId, 'by nurse:', user.id);
       
@@ -351,18 +462,30 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   };
 
   const handleCompleteAppointment = async (id: string) => {
-    try {
-      // Marquer comme terminé dans le backend
-      await api.updateAppointment(id, { status: 'completed' });
-      
-      // Mettre à jour localement
-      setAppointments(appointments.map(apt => 
-        apt.id === id ? { ...apt, status: 'completed' as const } : apt
-      ));
-    } catch (error) {
-      console.error('Error completing appointment:', error);
-      alert('Erreur lors de la fin du rendez-vous');
+    // Ouvrir le formulaire de compte-rendu au lieu de marquer directement
+    const apt = appointments.find(a => a.id === id);
+    if (apt) {
+      setRecapAppointment(apt);
+      setShowRecapModal(true);
     }
+  };
+
+  const handleRecapSuccess = async (appointmentId: string) => {
+    try {
+      // Mettre à jour le statut dans la base de données
+      await api.updateAppointment(appointmentId, { status: 'done' });
+      
+      // Marquer localement comme 'done'
+      setAppointments(prev =>
+        prev.map(apt => apt.id === appointmentId ? { ...apt, status: 'done' as const } : apt)
+      );
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du rendez-vous:', error);
+      toast.error('Le compte-rendu est créé, mais le statut du rendez-vous n\'a pas pu être mis à jour');
+    }
+    
+    setShowRecapModal(false);
+    setRecapAppointment(null);
   };
 
   const handleApplyOptimizedRoute = (optimizedAppointments: Appointment[]) => {
@@ -376,6 +499,121 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
 
   if (showSettings) {
     return <NurseSettings user={user} onBack={() => setShowSettings(false)} />;
+  }
+
+  if (showForms) {
+    const filteredForms = olgaForms.filter(f =>
+      (f.form_label || f.form_id).toLowerCase().includes(formsSearch.toLowerCase())
+    );
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={() => { setShowForms(false); setSelectedFormId(null); setSelectedFormData(null); setFormValues({}); }}>
+                  ← {t('common.back')}
+                </Button>
+                <div className="h-6 w-px bg-gray-300" />
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  <span className="text-gray-900 font-medium">Formulaires</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <LanguageSwitcher />
+                <User className="h-4 w-4 text-gray-500" />
+                <span className="text-sm text-gray-700">{user.name}</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-140px)]">
+            {/* Liste des formulaires */}
+            <div className="bg-white rounded-lg border border-gray-200 flex flex-col overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <h2 className="font-semibold text-gray-900 mb-2">Formulaires disponibles</h2>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Rechercher..."
+                    value={formsSearch}
+                    onChange={e => setFormsSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {formsLoading ? (
+                  <div className="p-4 text-center text-sm text-gray-400">Chargement...</div>
+                ) : filteredForms.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-gray-400">
+                    {olgaForms.length === 0 ? 'Aucun formulaire. Vérifie que le conteneur Olga API (port 9091) est démarré.' : 'Aucun résultat.'}
+                  </div>
+                ) : (
+                  filteredForms.map(f => (
+                    <button
+                      key={f.form_id}
+                      onClick={() => handleSelectForm(f.form_id)}
+                      className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-blue-50 transition-colors flex items-center justify-between group ${
+                        selectedFormId === f.form_id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''
+                      }`}
+                    >
+                      <div>
+                        <p className={`text-sm font-medium ${ selectedFormId === f.form_id ? 'text-blue-700' : 'text-gray-900' }`}>
+                          {f.form_label || f.form_id}
+                        </p>
+                        <p className="text-xs text-gray-400">{f.form_id}</p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500" />
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Affichage du formulaire */}
+            <div className="md:col-span-2 bg-white rounded-lg border border-gray-200 flex flex-col overflow-hidden">
+              {!selectedFormData && !formLoading ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-gray-400">
+                  <FileText className="h-12 w-12 mb-3 text-gray-200" />
+                  <p className="text-sm">Sélectionne un formulaire dans la liste</p>
+                </div>
+              ) : formLoading ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : selectedFormData ? (
+                <>
+                  <div className="px-6 py-4 border-b border-gray-100">
+                    <h2 className="font-semibold text-gray-900">{selectedFormData.form_label}</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">{selectedFormData.form_id}{selectedFormData.form_category ? ` • ${selectedFormData.form_category}` : ''}</p>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-6 py-4">
+                    <div className="space-y-4">
+                      {(selectedFormData.form || []).map(field => renderOlgaField(field))}
+                    </div>
+                  </div>
+                  <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+                    <Button variant="outline" onClick={() => {
+                      const init: Record<string, string | boolean> = {};
+                      (selectedFormData.form || []).forEach(f => { init[f.unique_id] = f.field_type === 'checkbox' ? false : ''; });
+                      setFormValues(init);
+                    }}>Réinitialiser</Button>
+                    <Button onClick={() => {
+                      alert(`Formulaire "${selectedFormData.form_label}" soumis !\n\n${JSON.stringify(formValues, null, 2)}`);
+                    }} className="bg-blue-600 hover:bg-blue-700 text-white">Soumettre</Button>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   if (showRouteOptimizer) {
@@ -409,7 +647,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
           <AIRouteOptimizer
             appointments={appointments}
             selectedDate={todayStr}
-            onApplyRoute={handleApplyOptimizedRoute}
+            onApplyRoute={handleApplyOptimizedRoute as any}
             nurseId={user.id}
           />
         </main>
@@ -432,6 +670,17 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
               <span className="text-gray-600 hidden sm:inline">{t('dashboard.nurse_space')}</span>
             </div>
             <div className="flex items-center gap-2 sm:gap-4">
+              {user.type === 'medecin' && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setShowValidations(true)} className="hidden sm:flex">
+                    <FileCheck className="h-4 w-4 mr-2" />
+                    Validations
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => setShowValidations(true)} className="sm:hidden">
+                    <FileCheck className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setShowSettings(true)} className="hidden sm:flex">
                 <Settings className="h-4 w-4 mr-2" />
                 {t('common.settings')}
@@ -840,7 +1089,29 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
             handleCompleteAppointment(selectedAppointment.id);
             setShowDetailsModal(false);
           }}
-          patientId={selectedAppointment.patient?.id || selectedAppointment.patient_id}
+          patientId={selectedAppointment.patient_id}
+        />
+      )}
+
+      {/* Visit Recap Modal */}
+      {showRecapModal && recapAppointment && (
+        <VisitRecapModal
+          open={showRecapModal}
+          onClose={() => { setShowRecapModal(false); setRecapAppointment(null); }}
+          appointmentId={recapAppointment.id}
+          pmId={user.id}
+          pmRole={user.type === 'medecin' ? 'medecin' : 'infirmier'}
+          patientName={recapAppointment.patientName}
+          careType={recapAppointment.type}
+          onSuccess={handleRecapSuccess}
+        />
+      )}
+
+      {/* Medecin Validations Modal */}
+      {showValidations && user.type === 'medecin' && (
+        <MedecinValidationsModal
+          medecinId={user.id}
+          onClose={() => setShowValidations(false)}
         />
       )}
 
