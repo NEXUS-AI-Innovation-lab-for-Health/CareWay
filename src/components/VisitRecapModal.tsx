@@ -244,10 +244,18 @@ export function VisitRecapModal({
     setIsSubmitting(true);
     try {
       // Préparer les données du workflow pour l'envoi
+      // Inclure le mapping uuid → label pour l'affichage ultérieur
+      const workflowFields: Record<string, string> = {};
+      if (workflowData?.workflow) {
+        workflowData.workflow.forEach(f => {
+          workflowFields[f.unique_id] = f.field_label || f.field_key || f.unique_id;
+        });
+      }
       const workflowDataToSend = {
         workflow_id: workflowData?.workflow_id,
         workflow_label: workflowData?.workflow_label,
-        workflow_values: workflowValues
+        workflow_values: workflowValues,
+        workflow_fields: workflowFields
       };
 
       await api.createVisitReport({

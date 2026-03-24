@@ -1301,11 +1301,11 @@ app.patch("/make-server-1b83ce4c/visit-reports/:id/medecin-validate", async (c) 
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
-    const { medecin_id } = body;
+    const { medecin_id, medecin_form_data } = body;
 
     if (!medecin_id) return c.json({ error: "medecin_id requis" }, 400);
 
-    const report = await db.validateVisitReportByMedecin(id, medecin_id);
+    const report = await db.validateVisitReportByMedecin(id, medecin_id, medecin_form_data);
     return c.json({ success: true, report });
   } catch (error) {
     console.error("❌ Error validating report:", error);

@@ -354,7 +354,7 @@ export const getVisitReportByAppointment = async (appointmentId: string): Promis
     headers: { 'Authorization': `Bearer ${publicAnonKey}` }
   });
   const res = await handleResponse(response);
-  return res.data;
+  return res.report;
 };
 
 export const getVisitReportsForPatient = async (patientId: string): Promise<VisitReport[]> => {

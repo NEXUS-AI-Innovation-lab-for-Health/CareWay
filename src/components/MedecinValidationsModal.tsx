@@ -145,11 +145,16 @@ export function MedecinValidationsModal({ medecinId, onClose }: MedecinValidatio
     try {
       setValidating(true);
       
-      // Préparer les données du formulaire médecin
+      // Préparer les données du formulaire médecin (avec labels)
+      const medecinFields: Record<string, string> = {};
+      medecinForm.workflow.forEach(f => {
+        medecinFields[f.unique_id] = f.field_label || f.field_key || f.unique_id;
+      });
       const medecinFormData = {
         workflow_id: medecinForm.workflow_id,
         workflow_label: medecinForm.workflow_label,
-        workflow_values: medecinFormValues
+        workflow_values: medecinFormValues,
+        workflow_fields: medecinFields
       };
       
       await api.validateVisitReportByMedecin(reportId, medecinId, medecinFormData);
@@ -340,7 +345,7 @@ export function MedecinValidationsModal({ medecinId, onClose }: MedecinValidatio
                         <div className="bg-blue-50 rounded-lg p-3 space-y-2">
                           {Object.entries(report.workflow_data.workflow_values).map(([key, value]) => (
                             <div key={key} className="grid grid-cols-3 gap-2 text-sm">
-                              <span className="font-medium text-gray-700">{key}:</span>
+                              <span className="font-medium text-gray-700">{report.workflow_data.workflow_fields?.[key] || key}:</span>
                               <span className="col-span-2 text-gray-900">
                                 {typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : String(value)}
                               </span>
@@ -371,7 +376,7 @@ export function MedecinValidationsModal({ medecinId, onClose }: MedecinValidatio
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {Object.entries(report.workflow_data.workflow_values).map(([key, value]) => (
                                   <div key={key} className="bg-white rounded px-3 py-2">
-                                    <span className="text-xs font-medium text-gray-600 block mb-1">{key}</span>
+                                    <span className="text-xs font-medium text-gray-600 block mb-1">{report.workflow_data.workflow_fields?.[key] || key}</span>
                                     <span className="text-sm text-gray-900 font-medium">
                                       {typeof value === 'boolean' ? (value ? '✓ Oui' : '✗ Non') : String(value)}
                                     </span>

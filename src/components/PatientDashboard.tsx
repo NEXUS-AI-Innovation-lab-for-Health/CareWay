@@ -15,8 +15,13 @@ import {
   LogOut, 
   Plus,
   Pill,
-  FileText
+  FileText,
+  CheckCircle,
+  Loader2,
+  Download,
+  ShieldCheck
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { BookingPage } from './BookingPage';
 import { NurseResultsPage } from './NurseResultsPage';
 import { AppointmentScheduler } from './AppointmentScheduler';
@@ -93,6 +98,9 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
   const [showVisioModal, setShowVisioModal] = useState(false);
   const [visioAppointment, setVisioAppointment] = useState<Appointment | null>(null);
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  const [visitReport, setVisitReport] = useState<api.VisitReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   const fetchAppointments = async () => {
     try {
@@ -618,9 +626,20 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            onClick={() => {
+                            onClick={async () => {
                               setSelectedAppointment(appointment);
+                              setVisitReport(null);
                               setIsDetailsOpen(true);
+                              // Charger le vrai rapport de visite
+                              try {
+                                setReportLoading(true);
+                                const report = await api.getVisitReportByAppointment(appointment.id);
+                                setVisitReport(report);
+                              } catch (e) {
+                                console.error('Erreur chargement rapport:', e);
+                              } finally {
+                                setReportLoading(false);
+                              }
                             }}
                           >
                             {t('dashboard.appointments.details')}
@@ -700,12 +719,127 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
 
               {/* Compte-rendu */}
               <div>
-                <h3 className="text-sm text-gray-700 mb-2">{t('dashboard.appointments.report')}</h3>
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-sm text-gray-900">
-                    {t('dashboard.appointments.report_content')}
-                  </p>
-                </div>
+                <h3 className="text-sm text-gray-700 mb-2 flex items-center gap-2">
+                  {t('dashboard.appointments.report')}
+                  {visitReport && (
+                    <Badge variant={visitReport.workflow_step === 'completed' ? 'default' : 'secondary'} className="text-xs">
+                      {visitReport.workflow_step === 'awaiting_medecin' && '⏳ En attente médecin'}
+                      {visitReport.workflow_step === 'awaiting_patient' && '📋 En attente de votre approbation'}
+                      {visitReport.workflow_step === 'completed' && '✅ Validé'}
+                    </Badge>
+                  )}
+                </h3>
+
+                {reportLoading ? (
+                  <div className="bg-gray-50 p-4 rounded-lg flex items-center justify-center gap-2 text-gray-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Chargement du compte-rendu…</span>
+                  </div>
+                ) : visitReport?.workflow_data ? (
+                  <div className="space-y-3">
+                    {/* Données du formulaire Olga rempli par l'infirmier */}
+                    <div className="bg-gray-50 p-3 rounded-lg space-y-2">
+                      {visitReport.workflow_data.workflow_label && (
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          {visitReport.workflow_data.workflow_label}
+                        </p>
+                      )}
+                      {visitReport.workflow_data.workflow_values &&
+                        Object.entries(visitReport.workflow_data.workflow_values as Record<string, string | boolean>).map(([key, value]) => (
+                          <div key={key} className="flex flex-col">
+                            <span className="text-xs text-gray-500">{visitReport.workflow_data.workflow_fields?.[key] || key.replace(/_/g, ' ')}</span>
+                            <span className="text-sm text-gray-900">
+                              {typeof value === 'boolean' ? (value ? '✓ Oui' : '✗ Non') : (value || '—')}
+                            </span>
+                          </div>
+                        ))
+                      }
+                    </div>
+
+                    {/* Données du formulaire médecin */}
+                    {visitReport.workflow_data.medecin_form_data?.workflow_values && (
+                      <div className="bg-green-50 border border-green-200 p-3 rounded-lg space-y-2">
+                        <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">
+                          {visitReport.workflow_data.medecin_form_data.workflow_label || 'Commentaires du médecin'}
+                        </p>
+                        {Object.entries(visitReport.workflow_data.medecin_form_data.workflow_values as Record<string, string | boolean>).map(([key, value]) => (
+                          <div key={key} className="flex flex-col">
+                            <span className="text-xs text-gray-500">{visitReport.workflow_data.medecin_form_data.workflow_fields?.[key] || key.replace(/_/g, ' ')}</span>
+                            <span className="text-sm text-gray-900">
+                              {typeof value === 'boolean' ? (value ? '✓ Oui' : '✗ Non') : (value || '—')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Champs classiques si remplis */}
+                    {(visitReport.actes_realises || visitReport.observations || visitReport.medicaments_administres || visitReport.suite_a_donner) && (
+                      <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg space-y-2">
+                        {visitReport.actes_realises && (
+                          <div><span className="text-xs text-gray-500">Actes réalisés</span><p className="text-sm">{visitReport.actes_realises}</p></div>
+                        )}
+                        {visitReport.observations && (
+                          <div><span className="text-xs text-gray-500">Observations</span><p className="text-sm">{visitReport.observations}</p></div>
+                        )}
+                        {visitReport.medicaments_administres && (
+                          <div><span className="text-xs text-gray-500">Médicaments administrés</span><p className="text-sm">{visitReport.medicaments_administres}</p></div>
+                        )}
+                        {visitReport.suite_a_donner && (
+                          <div><span className="text-xs text-gray-500">Suite à donner</span><p className="text-sm">{visitReport.suite_a_donner}</p></div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Infos de validation */}
+                    {visitReport.medecin_validated_at && (
+                      <p className="text-xs text-green-600 flex items-center gap-1">
+                        <ShieldCheck className="h-3 w-3" />
+                        Validé par le médecin le {new Date(visitReport.medecin_validated_at).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
+                    {visitReport.patient_approved_at && (
+                      <p className="text-xs text-green-600 flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" />
+                        Approuvé par vous le {new Date(visitReport.patient_approved_at).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
+
+                    {/* Bouton Approuver si en attente patient */}
+                    {visitReport.workflow_step === 'awaiting_patient' && (
+                      <Button
+                        size="sm"
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        disabled={approving}
+                        onClick={async () => {
+                          try {
+                            setApproving(true);
+                            await api.approveVisitReportByPatient(visitReport.id);
+                            setVisitReport({ ...visitReport, workflow_step: 'completed', patient_approved_at: new Date().toISOString() });
+                            toast.success('Compte-rendu approuvé avec succès');
+                          } catch (e) {
+                            console.error('Erreur approbation:', e);
+                            toast.error("Erreur lors de l'approbation");
+                          } finally {
+                            setApproving(false);
+                          }
+                        }}
+                      >
+                        {approving ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Approbation…</>
+                        ) : (
+                          <><CheckCircle className="h-4 w-4 mr-2" /> Approuver le compte-rendu</>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <p className="text-sm text-gray-500 italic">
+                      Aucun compte-rendu disponible pour ce rendez-vous.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Ordonnance si applicable */}
@@ -748,9 +882,138 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
             </div>
 
             <div className="flex gap-2 pt-3 border-t">
-              <Button variant="outline" size="sm" className="flex-1">
-                <FileText className="h-4 w-4 mr-2" />
-                {t('common.download')}
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                disabled={!visitReport}
+                onClick={() => {
+                  if (!visitReport || !selectedAppointment) return;
+                  const doc = new jsPDF();
+                  const margin = 20;
+                  let y = 20;
+
+                  // En-tête
+                  doc.setFontSize(18);
+                  doc.setFont('helvetica', 'bold');
+                  doc.text('CareWay - Compte-rendu de visite', margin, y);
+                  y += 12;
+
+                  // Infos RDV
+                  doc.setFontSize(10);
+                  doc.setFont('helvetica', 'normal');
+                  doc.setTextColor(100);
+                  doc.text(`Date : ${formatDate(selectedAppointment.date)}  |  Heure : ${selectedAppointment.time}`, margin, y); y += 6;
+                  doc.text(`Infirmier(e) : ${selectedAppointment.nurseName}`, margin, y); y += 6;
+                  doc.text(`Lieu : ${selectedAppointment.location}`, margin, y); y += 6;
+                  doc.text(`Type de soin : ${selectedAppointment.type}`, margin, y); y += 10;
+
+                  // Ligne de séparation
+                  doc.setDrawColor(200);
+                  doc.line(margin, y, 190, y); y += 8;
+
+                  // Statut
+                  doc.setTextColor(0);
+                  doc.setFontSize(10);
+                  const statusText = visitReport.workflow_step === 'completed' ? 'Valide' : visitReport.workflow_step === 'awaiting_patient' ? 'En attente approbation patient' : 'En attente validation medecin';
+                  doc.text(`Statut : ${statusText}`, margin, y); y += 8;
+
+                  // Formulaire Olga
+                  if (visitReport.workflow_data?.workflow_label) {
+                    doc.setFontSize(12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(visitReport.workflow_data.workflow_label, margin, y); y += 8;
+                  }
+
+                  if (visitReport.workflow_data?.workflow_values) {
+                    doc.setFontSize(10);
+                    const wfFields = visitReport.workflow_data.workflow_fields || {};
+                    Object.entries(visitReport.workflow_data.workflow_values as Record<string, string | boolean>).forEach(([key, value]) => {
+                      if (y > 265) { doc.addPage(); y = 20; }
+                      const label = wfFields[key] || key.replace(/_/g, ' ');
+                      const val = typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : (value || '—');
+                      doc.setFont('helvetica', 'bold');
+                      doc.setTextColor(80);
+                      doc.text(`${label} :`, margin, y);
+                      y += 6;
+                      doc.setFont('helvetica', 'normal');
+                      doc.setTextColor(0);
+                      const lines = doc.splitTextToSize(String(val), 170);
+                      if (y + lines.length * 5 > 280) { doc.addPage(); y = 20; }
+                      doc.text(lines, margin, y);
+                      y += 5 * lines.length + 4;
+                    });
+                  }
+
+                  // Données médecin
+                  if (visitReport.workflow_data?.medecin_form_data?.workflow_values) {
+                    y += 4;
+                    if (y > 265) { doc.addPage(); y = 20; }
+                    doc.setFontSize(12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(0);
+                    doc.text(visitReport.workflow_data.medecin_form_data.workflow_label || 'Commentaires du médecin', margin, y);
+                    y += 8;
+                    doc.setFontSize(10);
+                    const mdFields = visitReport.workflow_data.medecin_form_data.workflow_fields || {};
+                    Object.entries(visitReport.workflow_data.medecin_form_data.workflow_values as Record<string, string | boolean>).forEach(([key, value]) => {
+                      if (y > 265) { doc.addPage(); y = 20; }
+                      const label = mdFields[key] || key.replace(/_/g, ' ');
+                      const val = typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : (value || '—');
+                      doc.setFont('helvetica', 'bold');
+                      doc.setTextColor(80);
+                      doc.text(`${label} :`, margin, y);
+                      y += 6;
+                      doc.setFont('helvetica', 'normal');
+                      doc.setTextColor(0);
+                      const lines = doc.splitTextToSize(String(val), 170);
+                      if (y + lines.length * 5 > 280) { doc.addPage(); y = 20; }
+                      doc.text(lines, margin, y);
+                      y += 5 * lines.length + 4;
+                    });
+                  }
+
+                  // Champs classiques
+                  const fields = [
+                    { label: 'Actes realises', val: visitReport.actes_realises },
+                    { label: 'Observations', val: visitReport.observations },
+                    { label: 'Medicaments administres', val: visitReport.medicaments_administres },
+                    { label: 'Suite a donner', val: visitReport.suite_a_donner },
+                  ].filter(f => f.val);
+                  if (fields.length > 0) {
+                    y += 4;
+                    fields.forEach(({ label, val }) => {
+                      if (y > 270) { doc.addPage(); y = 20; }
+                      doc.setFont('helvetica', 'bold');
+                      doc.text(`${label} :`, margin, y); y += 6;
+                      doc.setFont('helvetica', 'normal');
+                      const lines = doc.splitTextToSize(val!, 170);
+                      doc.text(lines, margin, y);
+                      y += 6 * lines.length + 4;
+                    });
+                  }
+
+                  // Validation
+                  if (visitReport.medecin_validated_at) {
+                    y += 4;
+                    doc.setTextColor(34, 139, 34);
+                    doc.text(`Valide par le medecin le ${new Date(visitReport.medecin_validated_at).toLocaleDateString('fr-FR')}`, margin, y);
+                    y += 6;
+                  }
+                  if (visitReport.patient_approved_at) {
+                    doc.text(`Approuve par le patient le ${new Date(visitReport.patient_approved_at).toLocaleDateString('fr-FR')}`, margin, y);
+                  }
+
+                  // Pied de page
+                  doc.setTextColor(150);
+                  doc.setFontSize(8);
+                  doc.text(`Genere le ${new Date().toLocaleDateString('fr-FR')} par CareWay`, margin, 285);
+
+                  doc.save(`CareWay_Compte-rendu_${selectedAppointment.date}.pdf`);
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {t('common.download')} PDF
               </Button>
               <Button onClick={() => setIsDetailsOpen(false)} size="sm" className="flex-1 bg-black hover:bg-gray-800">
                 {t('common.close')}
