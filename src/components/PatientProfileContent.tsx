@@ -10,6 +10,7 @@ import { toast } from 'sonner@2.0.3';
 import { DocumentUploadModal } from './DocumentUploadModal';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { useLanguage } from './LanguageContext';
+import { getOlgaTestState, setOlgaTestState, clearOlgaTestState } from '../utils/olgaTestWorkflow';
 
 interface PatientProfileContentProps {
   user: UserType;
@@ -66,6 +67,14 @@ interface Prescription {
       name: string;
     };
   };
+}
+
+// Olga form types
+interface OlgaFormField {
+  field_key: string;
+  field_label: string;
+  field_type: string;
+  field_required?: boolean;
 }
 
 // Données mockées
@@ -184,6 +193,10 @@ export function PatientProfileContent({ user, onUpdateUser }: PatientProfileCont
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [olgaFields, setOlgaFields] = useState<OlgaFormField[]>([]);
+  const [olgaValues, setOlgaValues] = useState<Record<string, string | boolean>>({});
+  const [isOlgaLoading, setIsOlgaLoading] = useState(false);
+  const [olgaTestState, setOlgaTestStateLocal] = useState(getOlgaTestState());
   
   // États pour les documents et ordonnances
   const [documents, setDocuments] = useState<HealthDocument[]>([]);
@@ -222,6 +235,47 @@ export function PatientProfileContent({ user, onUpdateUser }: PatientProfileCont
 
     fetchProfile();
   }, [user.id, user.email, user.phone, user.address]);
+
+  // Charger le formulaire Olga (Rapport_patient_ID) pour test
+  useEffect(() => {
+    const fetchOlgaForm = async () => {
+      setIsOlgaLoading(true);
+      try {
+        const res = await fetch('http://localhost:9091/forms/getFromID/Rapport_patient_ID');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const fields: OlgaFormField[] = (data.form || []).map((f: any) => ({
+          field_key: f.field_key,
+          field_label: f.field_label,
+          field_type: f.field_type,
+          field_required: f.field_required,
+        }));
+        setOlgaFields(fields);
+        const initial: Record<string, string | boolean> = {};
+        fields.forEach((f) => {
+          const normalized = (f.field_type || '').toLowerCase();
+          initial[f.field_key] = normalized === 'checkbox' ? false : '';
+        });
+        setOlgaValues(initial);
+      } catch (error) {
+        console.error('Erreur chargement formulaire Olga:', error);
+      } finally {
+        setIsOlgaLoading(false);
+      }
+    };
+
+    fetchOlgaForm();
+    // sync test state from localStorage on mount
+    setOlgaTestStateLocal(getOlgaTestState());
+  }, []);
+
+  // Sync test state periodically (same-tab localStorage setItem doesn't fire 'storage')
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOlgaTestStateLocal(getOlgaTestState());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Charger les documents de santé
   const fetchDocuments = async () => {
@@ -586,6 +640,152 @@ export function PatientProfileContent({ user, onUpdateUser }: PatientProfileCont
           )}
         </CardContent>
       </Card>
+
+        {/* Formulaire Olga (test) */}
+        <Card className="mb-8">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Formulaire Olga – Rapport Patient (test)
+                </CardTitle>
+                <CardDescription>
+                  Chargé depuis /forms/getFromID/Rapport_patient_ID et rendu en champs éditables.
+                </CardDescription>
+              </div>
+              <Badge variant="outline">ID: Rapport_patient_ID</Badge>
+            </div>
+            {olgaTestState.status !== 'none' && (
+              <div className="text-xs text-gray-600">
+                Workflow test: {olgaTestState.status}
+              </div>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isOlgaLoading ? (
+              <p className="text-gray-500 text-sm">Chargement du formulaire...</p>
+            ) : olgaFields.length === 0 ? (
+              <p className="text-gray-500 text-sm">Aucun champ trouvé dans le formulaire.</p>
+            ) : (
+              <div className="space-y-4">
+                {olgaFields.map((field) => {
+                  const normalizedType = (field.field_type || '').toLowerCase();
+                  const label = field.field_label || field.field_key;
+                  const value = olgaValues[field.field_key];
+                  const updateValue = (v: string | boolean) => setOlgaValues((prev) => ({ ...prev, [field.field_key]: v }));
+                  const isInput = normalizedType.startsWith('input:');
+                  const inputKind = isInput ? normalizedType.split(':')[1] || 'text' : 'text';
+                  const allowedTypes = ['text', 'number', 'email', 'date', 'datetime-local', 'time', 'tel', 'url'];
+                  const inputType = allowedTypes.includes(inputKind) ? inputKind : 'text';
+
+                  return (
+                    <div key={field.field_key} className="space-y-2">
+                      <label className="block text-sm text-gray-700">
+                        {label}
+                        {field.field_required ? <span className="text-red-500 ml-1">*</span> : null}
+                      </label>
+                      {normalizedType === 'checkbox' ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            id={field.field_key}
+                            type="checkbox"
+                            className="h-4 w-4 accent-blue-600 rounded border-gray-300"
+                            checked={Boolean(value)}
+                            onChange={(e) => updateValue(e.target.checked)}
+                          />
+                          <label htmlFor={field.field_key} className="text-sm text-gray-700 cursor-pointer">
+                            {label || field.field_key}
+                          </label>
+                        </div>
+                      ) : (
+                        <Input
+                          type={isInput ? inputType : 'text'}
+                          value={(value as string) ?? ''}
+                          onChange={(e) => updateValue(e.target.value)}
+                          placeholder={label}
+                          inputMode={isInput && inputType === 'number' ? 'decimal' : undefined}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="pt-2 flex gap-2">
+                  <Button
+                    className="bg-black hover:bg-gray-800"
+                    onClick={() => console.log('Valeurs Olga test ->', olgaValues)}
+                  >
+                    Tester l&apos;enregistrement (console)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const reset: Record<string, string | boolean> = {};
+                      olgaFields.forEach((f) => {
+                        const normalized = (f.field_type || '').toLowerCase();
+                        reset[f.field_key] = normalized === 'checkbox' ? false : '';
+                      });
+                      setOlgaValues(reset);
+                    }}
+                  >
+                    Réinitialiser
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const payload = {
+                        formId: 'Rapport_patient_ID',
+                        values: olgaValues,
+                        from: user.email || user.name || 'patient'
+                      };
+                      const state = { status: 'pending_nurse' as const, payload };
+                      setOlgaTestState(state);
+                      setOlgaTestStateLocal(state);
+                      toast.success('Envoyé à l\'infirmier (test local)');
+                    }}
+                  >
+                    Envoyer à l&apos;infirmier (test)
+                  </Button>
+                  {olgaTestState.status !== 'none' && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        clearOlgaTestState();
+                        setOlgaTestStateLocal({ status: 'none' });
+                        toast.success('Workflow test réinitialisé');
+                      }}
+                    >
+                      Reset workflow test
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {olgaTestState.status === 'completed' && olgaTestState.payload && (
+          <Card className="mb-8 border-green-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-green-600" />
+                Formulaire validé (retour médecin)
+              </CardTitle>
+              <CardDescription>Validé par infirmier puis médecin (test local)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {Object.entries(olgaTestState.payload.values || {}).map(([k, v]) => (
+                <div key={k} className="text-sm text-gray-800">
+                  <span className="font-medium">{k}</span>: {String(v)}
+                </div>
+              ))}
+              <div className="text-xs text-gray-500 pt-2">
+                Infirmier: {olgaTestState.nurseValidatedAt ? new Date(olgaTestState.nurseValidatedAt).toLocaleString('fr-FR') : '—'} • Médecin: {olgaTestState.doctorValidatedAt ? new Date(olgaTestState.doctorValidatedAt).toLocaleString('fr-FR') : '—'}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
       {/* Health Documents */}
       <Card className="mb-8">

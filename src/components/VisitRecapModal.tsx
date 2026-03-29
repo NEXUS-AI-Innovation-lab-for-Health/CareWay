@@ -65,15 +65,14 @@ export function VisitRecapModal({
         const report = await api.getVisitReportByAppointment(appointmentId);
         if (report) {
           setExistingReport(report);
-          toast.info('Un compte-rendu existe déjà pour ce rendez-vous');
-        }
-      } catch (error) {
-        console.error('Erreur lors de la vérification du compte-rendu:', error);
-      }
-    };
+         }
+       } catch (error) {
+         console.error('Erreur lors de la vérification du compte-rendu:', error);
+       }
+     };
 
-    checkExistingReport();
-  }, [open, appointmentId]);
+     checkExistingReport();
+   }, [open, appointmentId]);
 
   // Charger le formulaire Olga approprié selon le rôle via le workflow
   useEffect(() => {
@@ -83,13 +82,26 @@ export function VisitRecapModal({
       setIsLoadingWorkflow(true);
       try {
         // 🔄 Récupération via le workflow Olga au lieu d'appel direct
-        const [formData, careTypesData] = await Promise.all([
-          api.getFormForRole('RapportPatient', pmRole),
-          api.getCareTypes()
-        ]);
-        
+        const workflowCandidates = pmRole === 'infirmier'
+          ? ['Rapport_patient_ID', 'RapportPatient']
+          : ['RapportMedecin_ID', 'RapportPatient'];
+
+        let formData = null;
+        let lastError: unknown = null;
+        for (const workflowId of workflowCandidates) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            formData = await api.getFormForRole(workflowId, pmRole);
+            if (formData) break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        const careTypesData = await api.getCareTypes();
+
         if (!formData) {
-          throw new Error(`Aucun formulaire trouvé pour le rôle ${pmRole} dans le workflow RapportPatient`);
+          throw new Error(`Aucun formulaire trouvé pour le rôle ${pmRole} (candidats: ${workflowCandidates.join(', ')}) - ${lastError instanceof Error ? lastError.message : ''}`);
         }
         
         // Adapter la structure de réponse du formulaire

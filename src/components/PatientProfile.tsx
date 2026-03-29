@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -33,6 +33,14 @@ interface Prescription {
   nurseName: string;
   medications: string[];
   notes: string;
+}
+
+// Olga form types
+interface OlgaFormField {
+  field_key: string;
+  field_label: string;
+  field_type: string;
+  field_required?: boolean;
 }
 
 // Données mockées
@@ -88,11 +96,45 @@ const mockPrescriptions: Prescription[] = [
 export function PatientProfile({ user, onBack }: PatientProfileProps) {
   const [personalInfo, setPersonalInfo] = useState<PersonalInfo>(mockPersonalInfo);
   const [isEditing, setIsEditing] = useState(false);
+  const [olgaFields, setOlgaFields] = useState<OlgaFormField[]>([]);
+  const [olgaValues, setOlgaValues] = useState<Record<string, string>>({});
+  const [isOlgaLoading, setIsOlgaLoading] = useState(false);
 
   const handleSave = () => {
     setIsEditing(false);
     // Ici on sauvegarderait les données
   };
+
+  // Charge le formulaire Olga (test)
+  useEffect(() => {
+    const fetchOlgaForm = async () => {
+      setIsOlgaLoading(true);
+      try {
+        const res = await fetch('http://localhost:9091/forms/getFromID/Rapport_patient_ID');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const fields: OlgaFormField[] = (data.form || []).map((f: any) => ({
+          field_key: f.field_key,
+          field_label: f.field_label,
+          field_type: f.field_type,
+          field_required: f.field_required,
+        }));
+        setOlgaFields(fields);
+        // Initialise les valeurs à vide
+        const initialVals: Record<string, string> = {};
+        fields.forEach((f) => {
+          initialVals[f.field_key] = '';
+        });
+        setOlgaValues(initialVals);
+      } catch (error) {
+        console.error('Erreur chargement formulaire Olga:', error);
+      } finally {
+        setIsOlgaLoading(false);
+      }
+    };
+
+    fetchOlgaForm();
+  }, []);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -258,6 +300,84 @@ export function PatientProfile({ user, onBack }: PatientProfileProps) {
                 )}
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Formulaire Olga (test) */}
+        <Card className="mb-8">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Formulaire Olga – Rapport Patient (test)
+                </CardTitle>
+                <CardDescription>
+                  Chargé depuis /forms/getFromID/Rapport_patient_ID et rendu en champs éditables.
+                </CardDescription>
+              </div>
+              <Badge variant="outline">ID: Rapport_patient_ID</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isOlgaLoading ? (
+              <p className="text-gray-500 text-sm">Chargement du formulaire...</p>
+            ) : olgaFields.length === 0 ? (
+              <p className="text-gray-500 text-sm">Aucun champ trouvé dans le formulaire.</p>
+            ) : (
+              <div className="space-y-4">
+                {olgaFields.map((field) => {
+                  const value = olgaValues[field.field_key] ?? '';
+                  const label = field.field_label || field.field_key;
+                  const isText = field.field_type?.startsWith('input:');
+
+                  return (
+                    <div key={field.field_key} className="space-y-2">
+                      <label className="block text-sm text-gray-700">
+                        {label}
+                        {field.field_required ? <span className="text-red-500 ml-1">*</span> : null}
+                      </label>
+                      {isText ? (
+                        <Input
+                          value={value}
+                          onChange={(e) =>
+                            setOlgaValues((prev) => ({ ...prev, [field.field_key]: e.target.value }))
+                          }
+                          placeholder={label}
+                        />
+                      ) : (
+                        <Input
+                          value={value}
+                          onChange={(e) =>
+                            setOlgaValues((prev) => ({ ...prev, [field.field_key]: e.target.value }))
+                          }
+                          placeholder={label}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="pt-2 flex gap-2">
+                  <Button
+                    className="bg-black hover:bg-gray-800"
+                    onClick={() => console.log('Valeurs Olga test ->', olgaValues)}
+                  >
+                    Tester l&apos;enregistrement (console)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const reset: Record<string, string> = {};
+                      olgaFields.forEach((f) => (reset[f.field_key] = ''));
+                      setOlgaValues(reset);
+                    }}
+                  >
+                    Réinitialiser
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

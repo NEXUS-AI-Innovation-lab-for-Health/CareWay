@@ -37,6 +37,7 @@ import * as api from '../services/api';
 import { toast } from 'sonner';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useLanguage } from './LanguageContext';
+import { getOlgaTestState, setOlgaTestState, clearOlgaTestState } from '../utils/olgaTestWorkflow';
 
 interface NurseDashboardProps {
   user: UserType;
@@ -107,6 +108,7 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [careTypes, setCareTypes] = useState<api.CareType[]>([]);
   const [showValidations, setShowValidations] = useState(false);
+  const [olgaTestState, setOlgaTestStateLocal] = useState(getOlgaTestState());
 
 
   // Charger la liste des formulaires Olga
@@ -283,7 +285,17 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
     };
 
     fetchData();
+    // sync test state
+    setOlgaTestStateLocal(getOlgaTestState());
   }, [user.id]);
+
+  // Poll test state to reflect updates from patient/medecin in same tab
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOlgaTestStateLocal(getOlgaTestState());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const confirmedAppointments = appointments.filter(apt => apt.status === 'confirmed');
   const completedAppointments = appointments.filter(apt => apt.status === 'done');
@@ -715,6 +727,55 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
             {t('dashboard.nurse.stats_summary_part1')} {pendingAppointments.length} {t('dashboard.nurse.stats_summary_part2')} {confirmedAppointments.length} {t('dashboard.nurse.stats_summary_part3')}
           </p>
         </div>
+
+        {/* Olga test inbox */}
+        {olgaTestState.status === 'pending_nurse' && olgaTestState.payload && (
+          <Card className="mb-8 border-blue-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileCheck className="h-5 w-5 text-blue-600" />
+                Formulaire patient à valider (test local)
+              </CardTitle>
+              <CardDescription>Reçu de {olgaTestState.payload.from}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Object.entries(olgaTestState.payload.values || {}).map(([k, v]) => (
+                <div key={k} className="text-sm text-gray-800">
+                  <span className="font-medium">{k}</span>: {String(v)}
+                </div>
+              ))}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => {
+                    const next = {
+                      status: 'pending_doctor' as const,
+                      payload: olgaTestState.payload,
+                      nurseValidatedAt: new Date().toISOString(),
+                    };
+                    setOlgaTestState(next);
+                    setOlgaTestStateLocal(next);
+                    toast.success('Envoyé au médecin (test)');
+                  }}
+                >
+                  Valider et envoyer au médecin
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    clearOlgaTestState();
+                    const fresh = getOlgaTestState();
+                    setOlgaTestStateLocal(fresh);
+                    toast.success('Workflow test réinitialisé');
+                  }}
+                >
+                  Rejeter / reset
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

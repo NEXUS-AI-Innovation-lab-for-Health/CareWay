@@ -102,6 +102,18 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
   const [reportLoading, setReportLoading] = useState(false);
   const [approving, setApproving] = useState(false);
 
+  const formatDateTimeSeconds = (iso?: string | null) => {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString('fr-FR', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+    } catch {
+      return iso;
+    }
+  };
+
   const fetchAppointments = async () => {
     try {
       const dbAppointments = await api.getPatientAppointments(user.id);
@@ -792,17 +804,18 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
                     )}
 
                     {/* Infos de validation */}
-                    {visitReport.medecin_validated_at && (
-                      <p className="text-xs text-green-600 flex items-center gap-1">
-                        <ShieldCheck className="h-3 w-3" />
-                        Validé par le médecin le {new Date(visitReport.medecin_validated_at).toLocaleDateString('fr-FR')}
-                      </p>
-                    )}
-                    {visitReport.patient_approved_at && (
-                      <p className="text-xs text-green-600 flex items-center gap-1">
-                        <CheckCircle className="h-3 w-3" />
-                        Approuvé par vous le {new Date(visitReport.patient_approved_at).toLocaleDateString('fr-FR')}
-                      </p>
+                    {(visitReport.created_at || visitReport.medecin_validated_at || visitReport.patient_approved_at) && (
+                      <div className="text-xs text-green-700 space-y-1">
+                        {visitReport.created_at && (
+                          <p className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Infirmier : {formatDateTimeSeconds(visitReport.created_at)}</p>
+                        )}
+                        {visitReport.medecin_validated_at && (
+                          <p className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Médecin : {formatDateTimeSeconds(visitReport.medecin_validated_at)}</p>
+                        )}
+                        {visitReport.patient_approved_at && (
+                          <p className="flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Vous : {formatDateTimeSeconds(visitReport.patient_approved_at)}</p>
+                        )}
+                      </div>
                     )}
 
                     {/* Bouton Approuver si en attente patient */}
@@ -993,15 +1006,17 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
                     });
                   }
 
-                  // Validation
-                  if (visitReport.medecin_validated_at) {
+                  // Validation (horodatée)
+                  const nurseTs = visitReport.created_at ? formatDateTimeSeconds(visitReport.created_at) : null;
+                  const docTs = visitReport.medecin_validated_at ? formatDateTimeSeconds(visitReport.medecin_validated_at) : null;
+                  const patientTs = visitReport.patient_approved_at ? formatDateTimeSeconds(visitReport.patient_approved_at) : null;
+
+                  if (nurseTs || docTs || patientTs) {
                     y += 4;
                     doc.setTextColor(34, 139, 34);
-                    doc.text(`Valide par le medecin le ${new Date(visitReport.medecin_validated_at).toLocaleDateString('fr-FR')}`, margin, y);
-                    y += 6;
-                  }
-                  if (visitReport.patient_approved_at) {
-                    doc.text(`Approuve par le patient le ${new Date(visitReport.patient_approved_at).toLocaleDateString('fr-FR')}`, margin, y);
+                    if (nurseTs) { doc.text(`Infirmier : ${nurseTs}`, margin, y); y += 6; }
+                    if (docTs) { doc.text(`Medecin : ${docTs}`, margin, y); y += 6; }
+                    if (patientTs) { doc.text(`Patient : ${patientTs}`, margin, y); }
                   }
 
                   // Pied de page

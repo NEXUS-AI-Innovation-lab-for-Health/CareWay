@@ -1,0 +1,41 @@
+{
+  "EDHA": {
+    "label": "Developpement Local",
+    "firebaseOptions": {
+      "apiKey": "AIzaSyBjDLbtXj4jANL0jn5ZndqhffLhVYAHdaE",
+      "authDomain": "edha-58f54.firebaseapp.com",
+      "projectId": "edha-58f54",
+      "storageBucket": "edha-58f54.firebasestorage.app",
+      "messagingSenderId": "422948882799",
+      "appId": "1:422948882799:web:51df6780941fe78fd1009a",
+      "measurementId": "G-Y1N3F2FJ4R"
+    },
+    "apiBaseUrl": "http://localhost:9091/"
+  },
+  "OLGA": {
+    "label": "OLGA",
+    "firebaseOptions": {
+      "apiKey": "AIzaSyCrx77sNGPGu2wzv_d6z9PXniEqIONllCU",
+      "authDomain": "olga-24a46.firebaseapp.com",
+      "projectId": "olga-24a46",
+      "storageBucket": "olga-24a46.firebasestorage.app",
+      "messagingSenderId": "734676751980",
+      "appId": "1:734676751980:web:816b056696ba2d1f8aaa49",
+      "measurementId": "G-ZS4BJ4HX92"
+    },
+    "apiBaseUrl": "http://localhost:9091/"
+  },
+  "DEV": {
+    "label": "Developpement Local",
+    "firebaseOptions": {
+      "apiKey": "AIzaSyDOSruVfk09V_N_sU6cY_ltXcznXZBuspg",
+      "authDomain": "workflowsae.firebaseapp.com",
+      "projectId": "workflowsae",
+      "storageBucket": "workflowsae.firebasestorage.app",
+      "messagingSenderId": "552984531664",
+      "appId": "1:552984531664:web:2e917713d0a5139177c4d5",
+      "measurementId": "G-S3TLJMG858"
+    },
+    "apiBaseUrl": "http://localhost:9091/"
+  }
+}

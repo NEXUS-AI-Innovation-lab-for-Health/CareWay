@@ -43,6 +43,43 @@ interface AIRouteOptimizerProps {
   nurseId?: string; // ID de l'infirmière pour récupérer les settings
 }
 
+// Stockage local d'un cache de géocodage simple
+const loadGeoCache = (): Record<string, { lat: number; lng: number }> => {
+  try {
+    const raw = localStorage.getItem('geoCache');
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+};
+
+const saveGeoCache = (cache: Record<string, { lat: number; lng: number }>) => {
+  try {
+    localStorage.setItem('geoCache', JSON.stringify(cache));
+  } catch {
+    // ignore quota errors silently
+  }
+};
+
+// Appel léger à Nominatim (sans clé) pour géocoder une adresse. Rate-limit recommandé côté usage réel.
+const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        'Accept-Language': 'fr'
+      }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch {
+    return null;
+  }
+};
+
 // Plages horaires pour chaque créneau
 const timeSlotRanges: Record<string, { start: number; end: number; increment: number }> = {
   morning: { start: 8, end: 12, increment: 20 },      // 8h à 12h, créneaux de 20min
@@ -56,6 +93,7 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
   const [optimizedRoute, setOptimizedRoute] = useState<OptimizedRoute | null>(null);
   const [showComparison, setShowComparison] = useState(false);
   const [currentSelectedDate, setCurrentSelectedDate] = useState(selectedDate);
+  const [coordsCache, setCoordsCache] = useState<Record<string, { lat: number; lng: number }>>(() => loadGeoCache());
 
   // Charge le mode de transport sauvegardé par l'infirmière dans localStorage.
   // Retourne 'car' par défaut si aucun mode n'est trouvé ou si la valeur est invalide.
@@ -148,14 +186,47 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     }
   };
 
+  // Adresse de départ infirmier (optionnelle) stockée en localStorage (clé nurseStartAddress).
+  // Si non présente, on considérera le premier rendez-vous comme point de départ.
+  const getStartAddress = (): string | null => {
+    try {
+      const addr = localStorage.getItem('nurseStartAddress');
+      return addr && addr.trim().length > 0 ? addr.trim() : null;
+    } catch (e) {
+      console.error('Error loading start address:', e);
+      return null;
+    }
+  };
+
+  const openGoogleMapsRoute = (origin: string, destination: string) => {
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+    window.open(url, '_blank', 'noopener');
+  };
+
   // Filtrer les rendez-vous pour la date sélectionnée
   const todayAppointments = appointments.filter(apt => apt.date === currentSelectedDate && apt.status === 'confirmed');
 
-  // Génère des coordonnées GPS approximatives à partir d'une adresse (simulation).
-  // Utilise un hash simple de la chaîne d'adresse pour produire des coordonnées
-  // autour de Lyon (lat ~45.75, lng ~4.85). En production, ceci serait remplacé par un géocodeur réel.
-  const getCoordinates = (location: string): { lat: number; lng: number } => {
-    // Simulation de géolocalisation basée sur le hash de l'adresse
+  const hydrateCoordinates = async (addresses: string[]): Promise<Record<string, { lat: number; lng: number }>> => {
+    let updated = { ...coordsCache };
+    for (const address of addresses) {
+      if (!updated[address]) {
+        const geo = await geocodeAddress(address);
+        if (geo) {
+          updated = { ...updated, [address]: geo };
+        }
+      }
+    }
+    if (Object.keys(updated).length !== Object.keys(coordsCache).length) {
+      setCoordsCache(updated);
+      saveGeoCache(updated);
+    }
+    return updated;
+  };
+
+  const getCoordinates = (location: string, cache: Record<string, { lat: number; lng: number }> = coordsCache): { lat: number; lng: number } => {
+    const cached = cache[location];
+    if (cached) return cached;
+    // Fallback hash (approx) si pas géocodé
     const hash = location.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     return {
       lat: 45.75 + (hash % 100) / 1000,
@@ -191,7 +262,8 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
   //    marges de sécurité et pauses automatiques
   // 4. Compare avec l'ordre naïf (non optimisé) pour calculer les gains de distance et temps
   // Retourne un objet OptimizedRoute avec les RDV réordonnés et les métriques.
-  const optimizeRoute = (): OptimizedRoute => {
+  const optimizeRoute = (cacheOverride?: Record<string, { lat: number; lng: number }>): OptimizedRoute => {
+    const cache = cacheOverride || coordsCache;
     if (todayAppointments.length === 0) {
       return {
         appointments: [],
@@ -241,13 +313,13 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
       // Algorithme du plus proche voisin
       while (remaining.length > 0) {
         const current = optimized[optimized.length - 1];
-        const currentCoords = getCoordinates(current.location);
+        const currentCoords = getCoordinates(current.location, cache);
         
         let nearestIndex = 0;
         let minDistance = Infinity;
         
         remaining.forEach((apt, index) => {
-          const aptCoords = getCoordinates(apt.location);
+          const aptCoords = getCoordinates(apt.location, cache);
           const distance = calculateDistance(currentCoords, aptCoords);
           
           // Priorité aux urgences même si un peu plus loin
@@ -274,7 +346,7 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     // - Le temps de trajet entre deux adresses consécutives
     // - L'insertion automatique de pauses quand le temps de travail accumulé dépasse la fréquence configurée
     // - La marge de sécurité ajoutée après chaque visite
-    const assignTimesToSlot = (group: Appointment[], slotKey: string): Appointment[] => {
+    const assignTimesToSlot = (group: Appointment[], slotKey: string, startCoords: { lat: number; lng: number } | null): Appointment[] => {
       const range = timeSlotRanges[slotKey];
       if (!range) return group;
       
@@ -296,9 +368,13 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
         
         // Temps de trajet vers ce point (si pas le premier)
         let travelTime = 0;
-        if (index > 0) {
-          const prevCoords = getCoordinates(optimizedGroup[index - 1].location);
-          const currentCoords = getCoordinates(apt.location);
+        if (index === 0 && startCoords) {
+          const currentCoords = getCoordinates(apt.location, cache);
+          const distance = calculateDistance(startCoords, currentCoords);
+          travelTime = getTravelTime(distance);
+        } else if (index > 0) {
+          const prevCoords = getCoordinates(optimizedGroup[index - 1].location, cache);
+          const currentCoords = getCoordinates(apt.location, cache);
           const distance = calculateDistance(prevCoords, currentCoords);
           travelTime = getTravelTime(distance); // Temps de trajet en fonction du mode de transport
         }
@@ -336,18 +412,24 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
     const allGroups = groupByTimeSlot([...urgentAppointments, ...normalAppointments]);
     
     // Optimiser chaque créneau
-    const morningOptimized = assignTimesToSlot(allGroups.morning, 'morning');
-    const afternoonOptimized = assignTimesToSlot(allGroups.afternoon, 'afternoon');
-    const eveningOptimized = assignTimesToSlot(allGroups.evening, 'evening');
+    const startAddr = getStartAddress();
+    const startCoords = startAddr ? getCoordinates(startAddr, cache) : null;
+
+    const morningOptimized = assignTimesToSlot(allGroups.morning, 'morning', startCoords);
+    const afternoonOptimized = assignTimesToSlot(allGroups.afternoon, 'afternoon', startCoords);
+    const eveningOptimized = assignTimesToSlot(allGroups.evening, 'evening', startCoords);
     
     // Combiner tous les créneaux
     const finalRoute = [...morningOptimized, ...afternoonOptimized, ...eveningOptimized];
 
-    // Calculer la distance totale optimisée
+    // Calculer la distance totale optimisée (incluant départ infirmier si dispo)
     let optimizedDistance = 0;
+    if (startCoords && finalRoute.length > 0) {
+      optimizedDistance += calculateDistance(startCoords, getCoordinates(finalRoute[0].location, cache));
+    }
     for (let i = 0; i < finalRoute.length - 1; i++) {
-      const coord1 = getCoordinates(finalRoute[i].location);
-      const coord2 = getCoordinates(finalRoute[i + 1].location);
+      const coord1 = getCoordinates(finalRoute[i].location, cache);
+      const coord2 = getCoordinates(finalRoute[i + 1].location, cache);
       optimizedDistance += calculateDistance(coord1, coord2);
     }
 
@@ -363,9 +445,16 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
       naiveTotalTime += visitDuration;
       
       // Temps de trajet vers la prochaine adresse
+      if (i === 0 && startCoords) {
+        const coordStart = startCoords;
+        const coordFirst = getCoordinates(naiveRoute[0].location, cache);
+        const d0 = calculateDistance(coordStart, coordFirst);
+        naiveDistance += d0;
+        naiveTotalTime += getTravelTime(d0);
+      }
       if (i < naiveRoute.length - 1) {
-        const coord1 = getCoordinates(naiveRoute[i].location);
-        const coord2 = getCoordinates(naiveRoute[i + 1].location);
+        const coord1 = getCoordinates(naiveRoute[i].location, cache);
+        const coord2 = getCoordinates(naiveRoute[i + 1].location, cache);
         const distance = calculateDistance(coord1, coord2);
         naiveDistance += distance;
         naiveTotalTime += getTravelTime(distance);
@@ -380,9 +469,13 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
       optimizedTotalTime += visitDuration;
       
       // Temps de trajet vers la prochaine adresse
+      if (i === 0 && startCoords) {
+        const d0 = calculateDistance(startCoords, getCoordinates(finalRoute[0].location, cache));
+        optimizedTotalTime += getTravelTime(d0);
+      }
       if (i < finalRoute.length - 1) {
-        const coord1 = getCoordinates(finalRoute[i].location);
-        const coord2 = getCoordinates(finalRoute[i + 1].location);
+        const coord1 = getCoordinates(finalRoute[i].location, cache);
+        const coord2 = getCoordinates(finalRoute[i + 1].location, cache);
         optimizedTotalTime += getTravelTime(calculateDistance(coord1, coord2));
       }
     }
@@ -404,16 +497,29 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
   // Lance l'optimisation algorithmique (V1) avec un délai simulé de 2 secondes
   // pour donner un feedback visuel d'un traitement en cours.
   // Appelle optimizeRoute() qui utilise l'algorithme du plus proche voisin.
-  const handleOptimize = () => {
+  const handleOptimize = async () => {
     setIsOptimizing(true);
-    
-    // Simuler un délai de traitement IA
-    setTimeout(() => {
-      const result = optimizeRoute();
+
+    try {
+      // Préhydrate les coordonnées (géocode OSM + cache local), puis optimise
+      const addresses = Array.from(
+        new Set(
+          [...todayAppointments.map(a => a.location), getStartAddress()].filter(Boolean) as string[]
+        )
+      );
+      const hydratedCache = await hydrateCoordinates(addresses);
+
+      const result = optimizeRoute(hydratedCache);
       setOptimizedRoute(result);
-      setIsOptimizing(false);
       setShowComparison(true);
-    }, 2000);
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'optimisation V1:', error);
+      const fallback = optimizeRoute();
+      setOptimizedRoute(fallback);
+      alert('Optimisation effectuée sans géocodage temps réel (mode dégradé).');
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
   // Lance l'optimisation avancée via IA (V2) en appelant l'API Groq/Mixtral.
@@ -443,18 +549,47 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
         }
       }
       
-      // Préparer les données pour l'IA
-      const appointmentsForAI = todayAppointments.map(apt => ({
-        id: apt.id,
-        patientName: apt.patientName,
-        location: apt.location,
-        type: apt.type,
-        duration: apt.duration || getCustomDuration(apt.type),
-        isUrgent: apt.isUrgent,
-        timeSlot: apt.timeSlot || 'morning'
-      }));
+      // Préparer les données pour l'IA (avec coordonnées + matrice distances)
+      const startAddress = getStartAddress();
+      const addresses = Array.from(
+        new Set(
+          [...todayAppointments.map(a => a.location), startAddress].filter(Boolean) as string[]
+        )
+      );
+      const hydratedCache = await hydrateCoordinates(addresses);
+      const startCoords = startAddress ? getCoordinates(startAddress, hydratedCache) : null;
+
+      const appointmentsForAI = todayAppointments.map(apt => {
+        const coords = getCoordinates(apt.location, hydratedCache);
+        return {
+          id: apt.id,
+          patientName: apt.patientName,
+          location: apt.location,
+          type: apt.type,
+          duration: apt.duration || getCustomDuration(apt.type),
+          isUrgent: apt.isUrgent,
+          timeSlot: apt.timeSlot || 'morning',
+          coords
+        };
+      });
+
+      const distanceMatrix = todayAppointments.flatMap(fromApt => {
+        const fromCoords = getCoordinates(fromApt.location, hydratedCache);
+        return todayAppointments
+          .filter(toApt => toApt.id !== fromApt.id)
+          .map(toApt => {
+            const toCoords = getCoordinates(toApt.location, hydratedCache);
+            const d = calculateDistance(fromCoords, toCoords);
+            return {
+              fromId: fromApt.id,
+              toId: toApt.id,
+              distanceKm: d,
+              travelMinutes: getTravelTime(d)
+            };
+          });
+      });
       
-      console.log('🤖 Calling AI optimization...', appointmentsForAI);
+      console.log('🤖 Calling AI optimization...', { appointmentsForAI, startAddress, startCoords, distanceMatrix });
       
       // Appeler l'API d'optimisation IA
       const response = await fetch(
@@ -467,6 +602,10 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
           },
           body: JSON.stringify({
             appointments: appointmentsForAI,
+            distanceMatrix,
+            startAddress,
+            startCoords,
+            transportMode: getTransportMode(),
             nurseSettings: nurseSettings || {
               transport: getTransportMode(),
               max_distance_km: 20
@@ -496,18 +635,70 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
           duration: originalApt?.duration || getCustomDuration(originalApt?.type || ''),
         };
       });
+
+      // Garde-fou local : si l'ordre IA n'est pas le plus court avec la matrice envoyée, on réordonne par plus proche voisin.
+      const computeDistanceForOrder = (order: typeof aiOptimizedAppointments) => {
+        let total = 0;
+        if (startCoords && order.length > 0) {
+          total += calculateDistance(startCoords, getCoordinates(order[0].location, hydratedCache));
+        }
+        for (let i = 0; i < order.length - 1; i++) {
+          const c1 = getCoordinates(order[i].location, hydratedCache);
+          const c2 = getCoordinates(order[i + 1].location, hydratedCache);
+          total += calculateDistance(c1, c2);
+        }
+        return total;
+      };
+
+      const buildGreedyRoute = () => {
+        if (aiOptimizedAppointments.length <= 1) return aiOptimizedAppointments;
+        const remaining = [...aiOptimizedAppointments];
+        const route: typeof aiOptimizedAppointments = [];
+        // Start point: closest to startCoords if present, otherwise first
+        if (startCoords) {
+          remaining.sort((a, b) => {
+            const da = calculateDistance(startCoords, getCoordinates(a.location, hydratedCache));
+            const db = calculateDistance(startCoords, getCoordinates(b.location, hydratedCache));
+            return da - db || a.patientName.localeCompare(b.patientName);
+          });
+        }
+        route.push(remaining.shift()!);
+        while (remaining.length > 0) {
+          const last = route[route.length - 1];
+          const lastCoord = getCoordinates(last.location, hydratedCache);
+          let bestIdx = 0;
+          let bestDist = Number.POSITIVE_INFINITY;
+          remaining.forEach((apt, idx) => {
+            const d = calculateDistance(lastCoord, getCoordinates(apt.location, hydratedCache));
+            if (d < bestDist || (Math.abs(d - bestDist) < 1e-6 && apt.patientName < remaining[bestIdx].patientName)) {
+              bestDist = d;
+              bestIdx = idx;
+            }
+          });
+          route.push(remaining.splice(bestIdx, 1)[0]);
+        }
+        return route;
+      };
+
+      const aiDistance = computeDistanceForOrder(aiOptimizedAppointments);
+      const greedyRoute = buildGreedyRoute();
+      const greedyDistance = computeDistanceForOrder(greedyRoute);
+      const finalAppointments = greedyDistance + 1e-6 < aiDistance ? greedyRoute : aiOptimizedAppointments;
+      const usedAiOrder = greedyDistance + 1e-6 >= aiDistance;
       
       // Calculer les métriques
       const result: OptimizedRoute = {
-        appointments: aiOptimizedAppointments,
-        totalDistance: data.optimizedRoute.summary.totalDistance,
+        appointments: finalAppointments,
+        totalDistance: usedAiOrder ? data.optimizedRoute.summary.totalDistance : greedyDistance,
         totalTime: data.optimizedRoute.summary.totalTime,
         savings: {
           distance: 0, // L'IA ne calcule pas les savings
           time: 0
         },
-        aiExplanation: data.optimizedRoute.summary.explanation,
-        aiProvider: 'groq'
+        aiExplanation: usedAiOrder
+          ? data.optimizedRoute.summary.explanation
+          : `${data.optimizedRoute.summary.explanation || 'Réordonné'} (garde-fou distance locale)`,
+        aiProvider: usedAiOrder ? 'groq' : 'groq+distance-guard'
       };
       
       setOptimizedRoute(result);
@@ -813,7 +1004,7 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
                 {optimizedRoute.appointments.map((apt, index) => {
                   const nextApt = optimizedRoute.appointments[index + 1];
                   const distance = nextApt 
-                    ? calculateDistance(getCoordinates(apt.location), getCoordinates(nextApt.location))
+                    ? calculateDistance(getCoordinates(apt.location, coordsCache), getCoordinates(nextApt.location, coordsCache))
                     : 0;
                   const travelTime = nextApt ? getTravelTime(distance) : 0;
                   
@@ -852,14 +1043,14 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
                             </div>
                             <span>•</span>
                             <MapPin className="h-3 w-3" />
-                            <span className="truncate">{apt.location.split(',')[0]}</span>
+                            <span className="truncate" title={apt.location}>{apt.location}</span>
                           </div>
                         </div>
                       </div>
                       
                       {/* Flèche de trajet vers le prochain rendez-vous */}
                       {nextApt && (
-                        <div className="flex items-center justify-center py-2">
+                        <div className="flex items-center justify-between py-2 gap-3 flex-wrap">
                           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full text-xs">
                             <span className="text-base">{getTransportInfo().icon}</span>
                             <Navigation className="h-3 w-3 text-blue-600" />
@@ -868,6 +1059,14 @@ export function AIRouteOptimizer({ appointments, selectedDate, onApplyRoute, nur
                             <Clock className="h-3 w-3 text-blue-600" />
                             <span className="text-blue-700">{travelTime} {t('common.minutes')}</span>
                           </div>
+                          <Button
+                            variant="outline"
+                            className="text-xs h-8"
+                            onClick={() => openGoogleMapsRoute(apt.location, nextApt.location)}
+                          >
+                            <Navigation className="h-3 w-3 mr-1" />
+                            Ouvrir l'itinéraire
+                          </Button>
                         </div>
                       )}
                     </div>

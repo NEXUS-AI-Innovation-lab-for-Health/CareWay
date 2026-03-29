@@ -67,6 +67,11 @@
             "preview": "vite preview",
             "docker:start": "docker compose -f docker/docker-compose.yml --profile local up -d --build",
             "docker:stop": "docker compose -f docker/docker-compose.yml --profile local down",
-            "docker:clean": "docker compose -f docker/docker-compose.yml --profile local down -v"
+            "docker:clean": "docker compose -f docker/docker-compose.yml --profile local down -v",
+            "olga:full:start": "docker compose -f docker/docker-compose.olga-full.yml up -d --build",
+            "olga:full:stop": "docker compose -f docker/docker-compose.olga-full.yml down",
+            "olga:full:logs": "docker compose -f docker/docker-compose.olga-full.yml logs -f",
+            "olga:metier:install": "npm --prefix olga/olga-metier/olga-metier-master install",
+            "olga:metier:dev": "npm --prefix olga/olga-metier/olga-metier-master run dev"
       }
 }

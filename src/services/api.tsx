@@ -566,7 +566,21 @@ export const getFormForRole = async (
   workflowId: string,
   role: 'infirmier' | 'medecin' | 'patient'
 ): Promise<OlgaForm | null> => {
-  const workflow = await getOlgaWorkflow(workflowId);
+  let workflow: OlgaWorkflow | null = null;
+
+  // D'abord essayer comme workflow complet
+  try {
+    workflow = await getOlgaWorkflow(workflowId);
+  } catch (err) {
+    // Si ce n'est pas un workflow (ex: ID de formulaire direct), tenter un fetch direct du formulaire
+    try {
+      return await getOlgaForm(workflowId);
+    } catch (formErr) {
+      throw formErr;
+    }
+  }
+
+  if (!workflow) return null;
   const formNodes = getFormNodesInOrder(workflow);
   
   // Mapping des rôles vers les groupes Olga
