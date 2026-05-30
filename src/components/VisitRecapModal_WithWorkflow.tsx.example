@@ -1,0 +1,159 @@
+import { useState, useEffect } from 'react';
+import * as api from '../services/api';
+import { toast } from 'sonner';
+
+/**
+ * EXEMPLE : Utilisation du workflow Olga au lieu d'appels directs de formulaires
+ * 
+ * AVANT (appel direct) :
+ * fetch('http://localhost:9091/forms/getFromID/Form_Patient1')
+ * 
+ * APRÈS (via workflow) :
+ * api.getFormForRole('RapportPatient', 'infirmier')
+ */
+
+export function VisitRecapModalWithWorkflow({ pmRole }: { pmRole: 'infirmier' | 'medecin' }) {
+  const [workflowData, setWorkflowData] = useState<api.OlgaForm | null>(null);
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
+
+  useEffect(() => {
+    loadWorkflowForm();
+  }, [pmRole]);
+
+  const loadWorkflowForm = async () => {
+    setIsLoadingWorkflow(true);
+    try {
+      // 🔄 Récupération via le workflow au lieu d'appel direct
+      const form = await api.getFormForRole('RapportPatient', pmRole);
+      
+      if (!form) {
+        throw new Error(`Aucun formulaire trouvé pour le rôle ${pmRole}`);
+      }
+
+      setWorkflowData(form);
+      
+      console.log('✅ Formulaire récupéré depuis le workflow:', {
+        workflow_id: 'RapportPatient',
+        role: pmRole,
+        form_id: form.form_id,
+        form_label: form.form_label
+      });
+      
+    } catch (error) {
+      console.error('Erreur lors du chargement du workflow:', error);
+      toast.error('Impossible de charger le formulaire de compte-rendu');
+    } finally {
+      setIsLoadingWorkflow(false);
+    }
+  };
+
+  // Alternative : Récupérer tout le workflow et naviguer manuellement
+  const loadFullWorkflow = async () => {
+    try {
+      // 1. Récupérer le workflow complet
+      const workflow = await api.getOlgaWorkflow('RapportPatient');
+      
+      console.log('📋 Workflow complet:', {
+        workflow_id: workflow.workflow_id,
+        workflow_label: workflow.workflow_label,
+        nodes: workflow.nodes.length,
+        edges: workflow.edges.length
+      });
+
+      // 2. Récupérer tous les formulaires dans l'ordre
+      const formNodes = api.getFormNodesInOrder(workflow);
+      
+      console.log('📝 Formulaires dans le workflow:', formNodes.map(node => ({
+        id: node.id,
+        form_id: node.data.form_id,
+        form_label: node.data.form_label,
+        groups: node.data.form_groups
+      })));
+
+      // 3. Récupérer le premier formulaire
+      const firstFormNode = api.getFirstFormNode(workflow);
+      if (firstFormNode?.data.form_id) {
+        const form = await api.getOlgaForm(firstFormNode.data.form_id);
+        setWorkflowData(form);
+      }
+
+      // 4. Naviguer vers le prochain nœud
+      if (firstFormNode) {
+        const nextNode = api.getNextWorkflowNode(workflow, firstFormNode.id);
+        console.log('➡️ Prochain nœud:', nextNode);
+      }
+
+    } catch (error) {
+      console.error('Erreur:', error);
+    }
+  };
+
+  return (
+    <div>
+      {isLoadingWorkflow ? (
+        <p>Chargement du workflow...</p>
+      ) : workflowData ? (
+        <div>
+          <h3>{workflowData.form_label}</h3>
+          <p>Form ID: {workflowData.form_id}</p>
+          <p>Nombre de champs: {workflowData.form?.length || 0}</p>
+          
+          {/* Rendu des champs du formulaire */}
+          {workflowData.form?.map(field => (
+            <div key={field.unique_id}>
+              <label>{field.field_label}</label>
+              {/* ... inputs ... */}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p>Aucun formulaire chargé</p>
+      )}
+      
+      <button onClick={loadFullWorkflow}>
+        Charger le workflow complet (debug)
+      </button>
+    </div>
+  );
+}
+
+/**
+ * UTILISATION DANS LES COMPOSANTS EXISTANTS
+ * 
+ * 1. VisitRecapModal.tsx
+ * ────────────────────────
+ * Remplacer :
+ *   const formId = pmRole === 'infirmier' ? 'Form_Patient1' : 'Form_Patient2';
+ *   fetch(`http://localhost:9091/forms/getFromID/${formId}`)
+ * 
+ * Par :
+ *   const form = await api.getFormForRole('RapportPatient', pmRole);
+ * 
+ * 
+ * 2. MedecinValidationsModal.tsx
+ * ────────────────────────────────
+ * Remplacer :
+ *   fetch('http://localhost:9091/forms/getFromID/Form_Patient2')
+ * 
+ * Par :
+ *   const form = await api.getFormForRole('RapportPatient', 'medecin');
+ * 
+ * 
+ * 3. NurseDashboard.tsx
+ * ──────────────────────
+ * Pour la liste des formulaires :
+ *   const workflow = await api.getOlgaWorkflow('RapportPatient');
+ *   const formNodes = api.getFormNodesInOrder(workflow);
+ * 
+ * Pour récupérer un formulaire spécifique :
+ *   const form = await api.getOlgaForm(formId);
+ * 
+ * 
+ * AVANTAGES
+ * ─────────
+ * ✅ Les formulaires sont récupérés via le workflow (orchestration)
+ * ✅ Le workflow définit l'ordre et les groupes autorisés
+ * ✅ Changements dans Olga Designer reflétés automatiquement
+ * ✅ Support natif des rôles et permissions (form_groups)
+ * ✅ Navigation automatique entre les étapes du workflow
+ */
