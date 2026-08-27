@@ -123,3 +123,4 @@ temp/
 .eslintcache
 .stylelintcache
 .parcel-cache
+.vercel

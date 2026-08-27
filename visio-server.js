@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
-const wss = new WebSocket.Server({ port: 8080 });
+const PORT = process.env.PORT || 8080;
+const wss = new WebSocket.Server({ port: PORT });
 
 const rooms = {};
 const clients = {}; // Stocker les clients par leur ID utilisateur
@@ -233,4 +234,4 @@ function handleLeave(ws) {
 }
 
 console.log('🚀 Serveur WebSocket de signalisation démarré');
-console.log('📡 Port 8080 - En attente de connexions...');
+console.log(`📡 Port ${PORT} - En attente de connexions...`);

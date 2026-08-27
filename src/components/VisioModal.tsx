@@ -96,7 +96,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
       // (évite les problèmes de proxy Vite avec les WebSockets)
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsHost = window.location.hostname;
-      const wsUrl = `${wsProtocol}://${wsHost}:8080`;
+      const wsUrl = import.meta.env.VITE_VISIO_WS_URL || `${wsProtocol}://${wsHost}:8080`;
 
       console.log('🔌 Tentative de connexion WebSocket à:', wsUrl);
 

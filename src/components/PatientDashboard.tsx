@@ -183,7 +183,7 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
   useEffect(() => {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = window.location.hostname;
-    const wsUrl = `${wsProtocol}://${wsHost}:8080`;
+    const wsUrl = import.meta.env.VITE_VISIO_WS_URL || `${wsProtocol}://${wsHost}:8080`;
     console.log('📡 Patient connecting to WebSocket:', wsUrl);
     const ws = new WebSocket(wsUrl);
 
