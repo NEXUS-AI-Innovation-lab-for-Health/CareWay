@@ -24,6 +24,11 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [aloneCountdown, setAloneCountdown] = useState<number | null>(null);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const pushDebug = (line: string) => {
+    console.log(line);
+    setDebugLog(prev => [...prev.slice(-14), `${new Date().toLocaleTimeString()} ${line}`]);
+  };
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -96,12 +101,14 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         video: { facingMode: 'user' },
         audio: true
       });
+      pushDebug(`🎥 Caméra OK (${stream.getVideoTracks().length}v/${stream.getAudioTracks().length}a)`);
 
       localStreamRef.current = stream;
       setJoined(true);
       setIsConnecting(false);
     } catch (err) {
       console.error('Erreur lors de l\'initialisation de la visio:', err);
+      pushDebug(`❌ Erreur init: ${err instanceof Error ? err.message : String(err)}`);
       setError(err instanceof Error ? err.message : 'Erreur lors de l\'initialisation');
       setIsConnecting(false);
     }
@@ -127,7 +134,8 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         ws.onopen = () => {
           clearTimeout(timeout);
           console.log('✅ Connecté au serveur WebSocket de signalisation');
-          
+          pushDebug(`✅ WS connecté (${wsUrl})`);
+
           // Rejoindre la salle
           ws.send(JSON.stringify({
             type: 'join',
@@ -156,6 +164,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         ws.onmessage = async (event) => {
           const data = JSON.parse(event.data);
           console.log('📨 Message WebSocket:', data.type);
+          pushDebug(`📨 WS reçu: ${data.type}${data.from ? ' de ' + data.from : ''}`);
 
           if (data.type === 'user-joined') {
             // Cancel alone countdown if someone joins
@@ -180,12 +189,14 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         ws.onerror = (error) => {
           clearTimeout(timeout);
           console.error('❌ Erreur WebSocket:', error);
+          pushDebug('❌ Erreur WebSocket');
           reject(new Error('Impossible de connecter au serveur WebSocket sur le port 8080. Assurez-vous d\'avoir lancé "npm run dev"'));
         };
 
         ws.onclose = () => {
           clearTimeout(timeout);
           console.log('👋 Déconnecté du serveur WebSocket');
+          pushDebug('👋 WS fermé');
         };
 
         wsRef.current = ws;
@@ -209,10 +220,12 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
       // Seul le membre existant (shouldCreateOffer=true) crée l'offre
       // L'autre attend de recevoir l'offre pour éviter le "glare" WebRTC
       if (data.shouldCreateOffer) {
+        pushDebug(`👤 ${data.username} a rejoint → je crée l'offre`);
         setTimeout(async () => {
           const pc = createPeerConnection(newUserId, ws);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
+          pushDebug('📤 Offre envoyée');
 
           ws.send(JSON.stringify({
             type: 'offer',
@@ -221,6 +234,8 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
             to: newUserId
           }));
         }, 500);
+      } else {
+        pushDebug(`👤 ${data.username} déjà présent → j'attends son offre`);
       }
     }
   };
@@ -297,6 +312,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         await flushPendingCandidates(from, pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
+        pushDebug('📥 Offre reçue → réponse envoyée');
 
         ws.send(JSON.stringify({
           type: 'answer',
@@ -309,8 +325,10 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         if (pc && pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           await flushPendingCandidates(from, pc);
+          pushDebug('📥 Réponse appliquée');
         } else {
           console.warn(`⚠️ Answer ignorée de ${from} — état actuel: ${pc?.signalingState}`);
+          pushDebug(`⚠️ Réponse ignorée (état: ${pc?.signalingState})`);
         }
       } else if (type === 'ice-candidate') {
         const pc = peerConnectionsRef.current[from];
@@ -325,12 +343,16 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
               await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
             } catch (e) {
               console.warn('Erreur lors de l\'ajout du ICE candidate:', e);
+              pushDebug(`⚠️ Erreur ICE candidate: ${e}`);
             }
           }
+        } else if (!pc) {
+          pushDebug(`⚠️ ICE candidate reçu mais pas de peerConnection pour ${from}`);
         }
       }
     } catch (err) {
       console.error('Erreur lors de la gestion du signaling:', err);
+      pushDebug(`❌ Erreur signaling: ${err}`);
     }
   };
 
@@ -345,11 +367,15 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
           pc.addTrack(track, localStreamRef.current);
         }
       });
+      pushDebug(`➕ ${localStreamRef.current.getTracks().length} track(s) local(aux) ajouté(s) à la connexion`);
+    } else {
+      pushDebug('⚠️ Pas de flux local au moment de créer la connexion !');
     }
 
     // Gérer les flux distants
     pc.ontrack = (event) => {
       console.log('Track reçu:', event.track.kind);
+      pushDebug(`🎞️ Track distant reçu: ${event.track.kind}`);
       const stream = event.streams[0];
       remoteStreamsRef.current[peerId] = stream;
 
@@ -361,17 +387,25 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
     // Envoyer les ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        pushDebug(`🧊 Candidate envoyé (${event.candidate.type ?? '?'})`);
         ws.send(JSON.stringify({
           type: 'ice-candidate',
           candidate: event.candidate,
           to: peerId,
           from: userName
         }));
+      } else {
+        pushDebug('🧊 Fin de la collecte ICE');
       }
     };
 
     pc.onconnectionstatechange = () => {
       console.log('État de la connexion peer:', pc.connectionState);
+      pushDebug(`🔗 Connexion peer: ${pc.connectionState}`);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      pushDebug(`🧊 État ICE: ${pc.iceConnectionState}`);
     };
 
     return pc;
@@ -472,6 +506,26 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         flexDirection: 'column',
       }}
     >
+      {/* Debug overlay temporaire — à retirer une fois le bug résolu */}
+      <div style={{
+        position: 'absolute',
+        bottom: 8,
+        left: 8,
+        right: 8,
+        maxHeight: '35vh',
+        overflowY: 'auto',
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        color: '#0f0',
+        fontFamily: 'monospace',
+        fontSize: 10,
+        padding: 8,
+        borderRadius: 8,
+        zIndex: 999999,
+        pointerEvents: 'none',
+      }}>
+        {debugLog.map((line, i) => <div key={i}>{line}</div>)}
+      </div>
+
       {/* Top bar */}
       <div style={{
         display: 'flex',
