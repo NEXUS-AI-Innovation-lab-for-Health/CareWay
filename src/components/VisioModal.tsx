@@ -565,7 +565,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
             <div style={{
               flex: 1,
               display: 'grid',
-              gridTemplateColumns: participants.length > 0 ? '1fr 1fr' : '1fr',
+              gridTemplateColumns: participants.length > 0 ? 'repeat(auto-fit, minmax(240px, 1fr))' : '1fr',
               gap: 4,
               padding: 4,
             }}>
