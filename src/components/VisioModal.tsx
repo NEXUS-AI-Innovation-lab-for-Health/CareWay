@@ -93,17 +93,19 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
       setIsConnecting(true);
       setError(null);
 
-      // Initialiser WebSocket
-      await initWebSocket();
-
-      // Obtenir les flux média
+      // Obtenir les flux média AVANT de rejoindre la salle : si on rejoint
+      // d'abord, l'autre participant peut répondre plus vite que getUserMedia
+      // ne résout, et la connexion se négocie alors sans piste audio/vidéo.
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user' },
         audio: true
       });
       pushDebug(`🎥 Caméra OK (${stream.getVideoTracks().length}v/${stream.getAudioTracks().length}a)`);
-
       localStreamRef.current = stream;
+
+      // Initialiser WebSocket et rejoindre la salle
+      await initWebSocket();
+
       setJoined(true);
       setIsConnecting(false);
     } catch (err) {
