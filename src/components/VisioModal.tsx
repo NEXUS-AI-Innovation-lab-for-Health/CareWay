@@ -34,6 +34,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
   const localStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const peerConnectionsRef = useRef<{ [key: string]: RTCPeerConnection }>({});
+  const pendingCandidatesRef = useRef<{ [key: string]: RTCIceCandidateInit[] }>({});
 
   const ICE_SERVERS = {
     iceServers: [
@@ -269,6 +270,19 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
     };
   }, [aloneCountdown]);
 
+  const flushPendingCandidates = async (peerId: string, pc: RTCPeerConnection) => {
+    const pending = pendingCandidatesRef.current[peerId];
+    if (!pending || pending.length === 0) return;
+    delete pendingCandidatesRef.current[peerId];
+    for (const candidate of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('Erreur lors de l\'ajout du ICE candidate en attente:', e);
+      }
+    }
+  };
+
   const handleSignaling = async (data: any, ws: WebSocket) => {
     const { from, type } = data;
 
@@ -280,6 +294,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         }
 
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        await flushPendingCandidates(from, pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
@@ -293,16 +308,24 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
         const pc = peerConnectionsRef.current[from];
         if (pc && pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          await flushPendingCandidates(from, pc);
         } else {
           console.warn(`⚠️ Answer ignorée de ${from} — état actuel: ${pc?.signalingState}`);
         }
       } else if (type === 'ice-candidate') {
         const pc = peerConnectionsRef.current[from];
         if (pc && data.candidate) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-          } catch (e) {
-            console.warn('Erreur lors de l\'ajout du ICE candidate:', e);
+          // Si la description distante n'est pas encore posée, on met le candidate
+          // de côté au lieu de le perdre (sinon addIceCandidate lève une erreur silencieuse)
+          if (!pc.remoteDescription || !pc.remoteDescription.type) {
+            if (!pendingCandidatesRef.current[from]) pendingCandidatesRef.current[from] = [];
+            pendingCandidatesRef.current[from].push(data.candidate);
+          } else {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+              console.warn('Erreur lors de l\'ajout du ICE candidate:', e);
+            }
           }
         }
       }
@@ -581,7 +604,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
                   autoPlay
                   muted
                   playsInline
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />
                 <div style={{
                   position: 'absolute',
@@ -625,7 +648,7 @@ export function VisioModal({ isOpen, onClose, userName, otherUserName, roomId, p
                     }}
                     autoPlay
                     playsInline
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                   />
                   <div style={{
                     position: 'absolute',
