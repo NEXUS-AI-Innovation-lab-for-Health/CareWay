@@ -179,59 +179,74 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
 
   }, [user.id]);
 
-  // Setup WebSocket connection for incoming calls
+  // Setup WebSocket connection for incoming calls (avec reconnexion automatique :
+  // le serveur gratuit Render se met en veille après inactivité et coupe la connexion)
   useEffect(() => {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsHost = window.location.hostname;
-    const wsUrl = import.meta.env.VITE_VISIO_WS_URL || `${wsProtocol}://${wsHost}:8080`;
-    console.log('📡 Patient connecting to WebSocket:', wsUrl);
-    const ws = new WebSocket(wsUrl);
+    let cancelled = false;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let currentWs: WebSocket | null = null;
 
-    ws.onopen = () => {
-      console.log('✅ Patient WebSocket connected to:', wsUrl);
-      console.log('📤 Sending join message with patient ID:', user.id);
-      // Send join message with patient ID to register for incoming calls
-      ws.send(JSON.stringify({
-        type: 'join',
-        patientId: user.id,
-        role: 'patient',
-        username: user.name
-      }));
+    const connect = () => {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const wsHost = window.location.hostname;
+      const wsUrl = import.meta.env.VITE_VISIO_WS_URL || `${wsProtocol}://${wsHost}:8080`;
+      console.log('📡 Patient connecting to WebSocket:', wsUrl);
+      const ws = new WebSocket(wsUrl);
+      currentWs = ws;
+
+      ws.onopen = () => {
+        console.log('✅ Patient WebSocket connected to:', wsUrl);
+        console.log('📤 Sending join message with patient ID:', user.id);
+        // Send join message with patient ID to register for incoming calls
+        ws.send(JSON.stringify({
+          type: 'join',
+          patientId: user.id,
+          role: 'patient',
+          username: user.name
+        }));
+        setWsConnection(ws);
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        console.log('📨 Patient received message:', message);
+
+        if (message.type === 'incoming-call') {
+          console.log('📞 INCOMING CALL DETECTED!', message);
+          const incomingCallObj: IncomingCall = {
+            id: message.appointmentId || `call_${Date.now()}`,
+            from: message.from,
+            fromUserId: message.nurseId,
+            nurseName: message.from,
+            appointmentId: message.appointmentId,
+            timestamp: message.timestamp || Date.now()
+          };
+          console.log('📞 Setting incoming call notification:', incomingCallObj);
+          setIncomingCall(incomingCallObj);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('❌ WebSocket error on patient side:', error);
+        console.error('⚠️ Could not connect to WebSocket at:', wsUrl);
+      };
+
+      ws.onclose = () => {
+        console.log('👋 Patient WebSocket closed');
+        if (!cancelled) {
+          // Reconnexion automatique (ex: le serveur visio gratuit s'est mis en veille)
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
     };
 
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      console.log('📨 Patient received message:', message);
-
-      if (message.type === 'incoming-call') {
-        console.log('📞 INCOMING CALL DETECTED!', message);
-        const incomingCallObj: IncomingCall = {
-          id: message.appointmentId || `call_${Date.now()}`,
-          from: message.from,
-          fromUserId: message.nurseId,
-          nurseName: message.from,
-          appointmentId: message.appointmentId,
-          timestamp: message.timestamp || Date.now()
-        };
-        console.log('📞 Setting incoming call notification:', incomingCallObj);
-        setIncomingCall(incomingCallObj);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error('❌ WebSocket error on patient side:', error);
-      console.error('⚠️ Could not connect to WebSocket at:', wsUrl);
-    };
-
-    ws.onclose = () => {
-      console.log('👋 Patient WebSocket closed');
-    };
-
-    setWsConnection(ws);
+    connect();
 
     return () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
+      cancelled = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        currentWs.close();
       }
     };
   }, [user.id]);
