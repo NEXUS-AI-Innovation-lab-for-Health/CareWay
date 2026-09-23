@@ -3,17 +3,14 @@
     build:
       context: ..
       dockerfile: docker/Dockerfile
-      target: dev
-    volumes:
-      - ..:/app
-      - /app/node_modules
+      target: production
+      args:
+        # Serveur de signalisation visio partagé (Render) : tout le monde doit
+        # se connecter au même serveur pour pouvoir s'appeler entre eux, que
+        # ce soit via Vercel, l'APK ou un lancement Docker local.
+        VITE_VISIO_WS_URL: wss://careway-visio.onrender.com
     ports:
-      - "3000:3000"
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
-    env_file:
-      - .env
+      - "3000:80"
 
   # --- Supabase local stack (optionnel) ---
   # docker compose --profile local up -d --build

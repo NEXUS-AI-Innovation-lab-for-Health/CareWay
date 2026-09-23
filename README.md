@@ -402,3 +402,57 @@ Pour toute question ou problème :
 - Ouvrez une [issue](https://github.com/NEXUS-AI-Innovation-lab-for-Health/CareWay/issues)
 
 ---
+
+## 📹 Visioconférence
+
+CareWay intègre un système de visioconférence en temps réel permettant aux infirmiers d'appeler leurs patients directement depuis l'application.
+
+### Architecture technique
+
+Le système repose sur **3 composants** :
+
+| Composant | Technologie | Rôle |
+|-----------|-------------|------|
+| **WebRTC** | API navigateur native | Connexion pair-à-pair (P2P) pour la vidéo et l'audio entre les deux navigateurs |
+| **WebSocket** | Node.js + librairie `ws` | Serveur de signalisation (`visio-server.js`, port 8080) qui coordonne l'établissement des connexions |
+| **React** | TypeScript + inline styles | Interface utilisateur (modale visio, notifications d'appel entrant) |
+
+### Fichiers principaux
+
+- **`visio-server.js`** — Serveur WebSocket de signalisation (racine du projet)
+- **`src/components/VisioModal.tsx`** — Interface complète de l'appel vidéo (dark mode, plein écran, chat intégré)
+- **`src/components/IncomingCallNotification.tsx`** — Notification d'appel entrant côté patient
+
+### Lancement
+
+La visio est lancée automatiquement avec la commande de développement :
+
+```bash
+npm run dev
+```
+
+Cette commande utilise `concurrently` pour démarrer en parallèle :
+- **Vite** (port 3000) — serveur de développement React
+- **visio-server.js** (port 8080) — serveur WebSocket de signalisation
+
+### Flux d'un appel
+
+1. **L'infirmier** clique sur le bouton "Live visio connect" sur un rendez-vous dans son dashboard
+2. La `VisioModal` s'ouvre et se connecte au serveur WebSocket → envoie une notification `incoming-call`
+3. Le serveur route la notification vers le **patient** via son ID dans le registre des clients
+4. Le **patient** voit une notification d'appel entrant avec les boutons "Répondre" / "Refuser"
+5. S'il accepte → sa `VisioModal` s'ouvre, il rejoint la salle WebSocket
+6. Le serveur notifie les deux côtés (`user-joined`) → échange d'offre/réponse SDP et ICE candidates
+7. La connexion **WebRTC P2P** s'établit → vidéo et audio en direct
+8. Quand une personne raccroche → l'autre voit un compte à rebours de 10 secondes avant déconnexion automatique
+
+### Fonctionnalités de la visio
+
+- 🎥 Vidéo/audio en temps réel (WebRTC P2P)
+- 💬 Chat textuel intégré (panneau latéral)
+- 🔇 Couper/activer micro et caméra
+- 🖥️ Mode plein écran (API Fullscreen native)
+- ⏱️ Compte à rebours de déconnexion quand l'autre participant quitte
+- 📞 Système d'appel entrant avec notification visuelle
+
+---

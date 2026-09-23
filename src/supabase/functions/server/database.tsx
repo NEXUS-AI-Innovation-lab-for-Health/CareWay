@@ -846,15 +846,32 @@ export const getVisitReportsForPatient = async (patientId: string): Promise<(Vis
   return (data || []).filter(r => r.appointment !== null);
 };
 
-export const validateVisitReportByMedecin = async (reportId: string, medecinId: string): Promise<VisitReport> => {
+export const validateVisitReportByMedecin = async (reportId: string, medecinId: string, medecinFormData?: any): Promise<VisitReport> => {
   const supabase = getClient();
+
+  // Fetch existing workflow_data to merge medecin form data into it
+  let mergedWorkflowData: any = undefined;
+  if (medecinFormData) {
+    const { data: existing } = await supabase
+      .from('visit_reports')
+      .select('workflow_data')
+      .eq('id', reportId)
+      .single();
+    mergedWorkflowData = { ...(existing?.workflow_data || {}), medecin_form_data: medecinFormData };
+  }
+
+  const updatePayload: any = {
+    workflow_step: 'awaiting_patient',
+    medecin_validated_at: new Date().toISOString(),
+    medecin_validator_id: medecinId,
+  };
+  if (mergedWorkflowData) {
+    updatePayload.workflow_data = mergedWorkflowData;
+  }
+
   const { data, error } = await supabase
     .from('visit_reports')
-    .update({
-      workflow_step: 'awaiting_patient',
-      medecin_validated_at: new Date().toISOString(),
-      medecin_validator_id: medecinId,
-    })
+    .update(updatePayload)
     .eq('id', reportId)
     .eq('workflow_step', 'awaiting_medecin')
     .select()

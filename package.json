@@ -36,6 +36,7 @@
             "embla-carousel-react": "^8.6.0",
             "hono": "*",
             "input-otp": "^1.4.2",
+            "jspdf": "^4.2.0",
             "lucide-react": "^0.487.0",
             "next-themes": "^0.4.6",
             "react": "^18.3.1",
@@ -46,22 +47,31 @@
             "recharts": "^2.15.2",
             "sonner": "^2.0.3",
             "tailwind-merge": "*",
-            "vaul": "^1.1.2"
+            "vaul": "^1.1.2",
+            "ws": "^8.17.1"
       },
       "devDependencies": {
             "@types/node": "^20.10.0",
             "@types/react": "^19.2.14",
             "@types/react-dom": "^19.2.3",
             "@vitejs/plugin-react-swc": "^3.10.2",
+            "concurrently": "^8.2.2",
             "vite": "6.3.5"
       },
       "scripts": {
-            "dev": "vite",
+            "dev": "concurrently \"node visio-server.js\" \"vite\"",
+            "dev:app": "vite",
+            "dev:server": "node visio-server.js",
             "build": "vite build",
             "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
             "preview": "vite preview",
             "docker:start": "docker compose -f docker/docker-compose.yml --profile local up -d --build",
             "docker:stop": "docker compose -f docker/docker-compose.yml --profile local down",
-            "docker:clean": "docker compose -f docker/docker-compose.yml --profile local down -v"
+            "docker:clean": "docker compose -f docker/docker-compose.yml --profile local down -v",
+            "olga:full:start": "docker compose -f docker/docker-compose.olga-full.yml up -d --build",
+            "olga:full:stop": "docker compose -f docker/docker-compose.olga-full.yml down",
+            "olga:full:logs": "docker compose -f docker/docker-compose.olga-full.yml logs -f",
+            "olga:metier:install": "npm --prefix olga/olga-metier/olga-metier-master install",
+            "olga:metier:dev": "npm --prefix olga/olga-metier/olga-metier-master run dev"
       }
 }

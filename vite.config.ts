@@ -68,5 +68,13 @@
         usePolling: true,
         interval: 300,
       },
+      // Proxy pour les WebSocket vers le serveur de signalisation visio
+      proxy: {
+        '/ws': {
+          target: 'ws://localhost:8080',
+          ws: true,
+          rewrite: (path) => path.replace(/^\/ws/, '/ws'),
+        },
+      },
     },
   });

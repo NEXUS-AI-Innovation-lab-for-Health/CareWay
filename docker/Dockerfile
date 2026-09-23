@@ -11,6 +11,7 @@ FROM base AS build
 COPY . .
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_VISIO_WS_URL
 RUN npm run build
 
 FROM nginx:alpine AS production

@@ -15,6 +15,7 @@ import {
 import * as api from '../services/api';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useLanguage } from './LanguageContext';
+import { getOlgaTestState, setOlgaTestState, clearOlgaTestState } from '../utils/olgaTestWorkflow';
 import type { User as UserType } from '../App';
 import { toast } from 'sonner';
 
@@ -39,6 +40,7 @@ export function MedecinDashboard({ user, onLogout }: MedecinDashboardProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [validating, setValidating] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ExpandedReport>({});
+  const [olgaTestState, setOlgaTestStateLocal] = useState(getOlgaTestState());
 
   const fetchReports = async () => {
     try {
@@ -52,6 +54,15 @@ export function MedecinDashboard({ user, onLogout }: MedecinDashboardProps) {
   };
 
   useEffect(() => { fetchReports(); }, []);
+  useEffect(() => { setOlgaTestStateLocal(getOlgaTestState()); }, []);
+
+  // Poll test state to catch updates from nurse/patient in same tab
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOlgaTestStateLocal(getOlgaTestState());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleValidate = async (reportId: string) => {
     setValidating(reportId);
@@ -76,6 +87,10 @@ export function MedecinDashboard({ user, onLogout }: MedecinDashboardProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Debug badge for Olga test state */}
+      <div className="fixed top-2 right-2 z-50 text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded shadow-sm text-gray-700">
+        Olga test: {olgaTestState.status}
+      </div>
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -115,6 +130,55 @@ export function MedecinDashboard({ user, onLogout }: MedecinDashboardProps) {
               : 'Aucun compte-rendu en attente'}
           </p>
         </div>
+
+        {/* Olga test inbox doctor */}
+        {olgaTestState.status === 'pending_doctor' && olgaTestState.payload && (
+          <Card className="mb-6 border-orange-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-orange-600" />
+                Formulaire à valider (test local)
+              </CardTitle>
+              <CardDescription>Reçu de {olgaTestState.payload.from}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Object.entries(olgaTestState.payload.values || {}).map(([k, v]) => (
+                <div key={k} className="text-sm text-gray-800">
+                  <span className="font-medium">{k}</span>: {String(v)}
+                </div>
+              ))}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  className="bg-orange-600 hover:bg-orange-700"
+                  onClick={() => {
+                    const next = {
+                      status: 'completed' as const,
+                      payload: olgaTestState.payload,
+                      nurseValidatedAt: olgaTestState.nurseValidatedAt,
+                      doctorValidatedAt: new Date().toISOString(),
+                    };
+                    setOlgaTestState(next);
+                    setOlgaTestStateLocal(next);
+                    toast.success('Validé et renvoyé au patient (test)');
+                  }}
+                >
+                  Valider et envoyer au patient
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    clearOlgaTestState();
+                    const fresh = getOlgaTestState();
+                    setOlgaTestStateLocal(fresh);
+                    toast.success('Workflow test réinitialisé');
+                  }}
+                >
+                  Rejeter / reset
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isLoading ? (
           <div className="text-center py-16 text-gray-400">Chargement…</div>

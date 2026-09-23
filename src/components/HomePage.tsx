@@ -20,9 +20,8 @@ export function HomePage({ onSelectPatient, onSelectNurse }: HomePageProps) {
         <Card className="shadow-xl">
           <CardHeader className="text-center space-y-1 pb-2 pt-3">
             <div className="flex justify-center">
-              <div className="flex items-center gap-1">
-                <span className="text-xl">DW</span>
-                <span className="text-xl">™</span>
+              <div className="flex items-center gap-2">
+                <span className="text-3xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">CareWay</span>
               </div>
             </div>
             <div>

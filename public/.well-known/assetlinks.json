@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.careway_two.twa",
+        "sha256_cert_fingerprints": ["0B:1A:A5:C3:FD:D3:4F:48:97:44:57:0A:F2:CB:E5:BA:C3:49:A3:03:69:8E:49:AD:FE:F8:F2:03:D1:B3:02:D5"]
+      }
+    }]

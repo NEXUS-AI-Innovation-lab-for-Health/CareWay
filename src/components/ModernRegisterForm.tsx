@@ -134,9 +134,8 @@ export function ModernRegisterForm({ onRegisterSuccess, onSwitchToLogin, onBack 
 
           {/* Logo */}
           <div className="mb-12">
-            <div className="flex items-center gap-1">
-              <span className="text-xl">DW</span>
-              <span className="text-xl">™</span>
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">CareWay</span>
             </div>
           </div>
 

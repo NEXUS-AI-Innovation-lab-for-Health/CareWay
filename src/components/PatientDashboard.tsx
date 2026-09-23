@@ -15,11 +15,18 @@ import {
   LogOut, 
   Plus,
   Pill,
-  FileText
+  FileText,
+  CheckCircle,
+  Loader2,
+  Download,
+  ShieldCheck
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { BookingPage } from './BookingPage';
 import { NurseResultsPage } from './NurseResultsPage';
 import { AppointmentScheduler } from './AppointmentScheduler';
+import { IncomingCallNotification, type IncomingCall } from './IncomingCallNotification';
+import { VisioModal } from './VisioModal';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -61,6 +68,7 @@ interface Appointment {
   date: string;
   time: string;
   nurseName: string;
+  nurseId?: string;
   location: string;
   type: string;
   status: 'upcoming' | 'completed' | 'cancelled';
@@ -86,6 +94,25 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [careTypes, setCareTypes] = useState<api.CareType[]>([]);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const [showVisioModal, setShowVisioModal] = useState(false);
+  const [visioAppointment, setVisioAppointment] = useState<Appointment | null>(null);
+  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  const [visitReport, setVisitReport] = useState<api.VisitReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [approving, setApproving] = useState(false);
+
+  const formatDateTimeSeconds = (iso?: string | null) => {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString('fr-FR', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+    } catch {
+      return iso;
+    }
+  };
 
   const fetchAppointments = async () => {
     try {
@@ -116,6 +143,7 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
           date: apt.date,
           time: apt.slot === 'morning' ? '09:00' : apt.slot === 'afternoon' ? '14:00' : '18:00',
           nurseName,
+          nurseId: apt.infirmier_id,
           location: apt.address,
           type: careTypeName,
           status: apt.status === 'pending' ? 'upcoming' : 
@@ -150,6 +178,128 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
     fetchCareTypes();
 
   }, [user.id]);
+
+  // Setup WebSocket connection for incoming calls (avec reconnexion automatique :
+  // le serveur gratuit Render se met en veille après inactivité et coupe la connexion)
+  useEffect(() => {
+    let cancelled = false;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let currentWs: WebSocket | null = null;
+
+    const connect = () => {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const wsHost = window.location.hostname;
+      const wsUrl = import.meta.env.VITE_VISIO_WS_URL || `${wsProtocol}://${wsHost}:8080`;
+      console.log('📡 Patient connecting to WebSocket:', wsUrl);
+      const ws = new WebSocket(wsUrl);
+      currentWs = ws;
+
+      ws.onopen = () => {
+        console.log('✅ Patient WebSocket connected to:', wsUrl);
+        console.log('📤 Sending join message with patient ID:', user.id);
+        // Send join message with patient ID to register for incoming calls
+        ws.send(JSON.stringify({
+          type: 'join',
+          patientId: user.id,
+          role: 'patient',
+          username: user.name
+        }));
+        setWsConnection(ws);
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        console.log('📨 Patient received message:', message);
+
+        if (message.type === 'incoming-call') {
+          console.log('📞 INCOMING CALL DETECTED!', message);
+          const incomingCallObj: IncomingCall = {
+            id: message.appointmentId || `call_${Date.now()}`,
+            from: message.from,
+            fromUserId: message.nurseId,
+            nurseName: message.from,
+            appointmentId: message.appointmentId,
+            timestamp: message.timestamp || Date.now()
+          };
+          console.log('📞 Setting incoming call notification:', incomingCallObj);
+          setIncomingCall(incomingCallObj);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('❌ WebSocket error on patient side:', error);
+        console.error('⚠️ Could not connect to WebSocket at:', wsUrl);
+      };
+
+      ws.onclose = () => {
+        console.log('👋 Patient WebSocket closed');
+        if (!cancelled) {
+          // Reconnexion automatique (ex: le serveur visio gratuit s'est mis en veille)
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        currentWs.close();
+      }
+    };
+  }, [user.id]);
+
+  const handleAcceptIncomingCall = (call: IncomingCall) => {
+    console.log('📞 Accepting call:', call);
+    
+    // Fermer la notification immédiatement
+    setIncomingCall(null);
+    
+    // Chercher le RDV correspondant, sinon en créer un temporaire
+    const appointment = appointments.find(apt => apt.id === call.appointmentId);
+    const visioData = appointment || {
+      id: call.appointmentId,
+      date: new Date().toISOString().split('T')[0],
+      time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      nurseName: call.nurseName,
+      nurseId: call.fromUserId,
+      location: '',
+      type: 'Visio',
+      status: 'upcoming' as const,
+    };
+    
+    console.log('📹 Opening visio with data:', visioData);
+    setVisioAppointment(visioData);
+    setShowVisioModal(true);
+    
+    // Envoyer l'acceptation à l'infirmière
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      wsConnection.send(JSON.stringify({
+        type: 'call-accepted',
+        appointmentId: call.appointmentId,
+        patientId: user.id,
+        to: call.fromUserId
+      }));
+    }
+  };
+
+  const handleRejectIncomingCall = (call: IncomingCall) => {
+    setIncomingCall(null);
+    
+    // Send rejection message to nurse
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      wsConnection.send(JSON.stringify({
+        type: 'call-rejected',
+        appointmentId: call.appointmentId,
+        patientId: user.id,
+        to: call.fromUserId
+      }));
+    }
+    
+    toast.error('Appel refusé');
+  };
 
   const upcomingAppointments = appointments
     .filter(apt => apt.status === 'upcoming')
@@ -503,9 +653,20 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            onClick={() => {
+                            onClick={async () => {
                               setSelectedAppointment(appointment);
+                              setVisitReport(null);
                               setIsDetailsOpen(true);
+                              // Charger le vrai rapport de visite
+                              try {
+                                setReportLoading(true);
+                                const report = await api.getVisitReportByAppointment(appointment.id);
+                                setVisitReport(report);
+                              } catch (e) {
+                                console.error('Erreur chargement rapport:', e);
+                              } finally {
+                                setReportLoading(false);
+                              }
                             }}
                           >
                             {t('dashboard.appointments.details')}
@@ -585,12 +746,128 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
 
               {/* Compte-rendu */}
               <div>
-                <h3 className="text-sm text-gray-700 mb-2">{t('dashboard.appointments.report')}</h3>
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-sm text-gray-900">
-                    {t('dashboard.appointments.report_content')}
-                  </p>
-                </div>
+                <h3 className="text-sm text-gray-700 mb-2 flex items-center gap-2">
+                  {t('dashboard.appointments.report')}
+                  {visitReport && (
+                    <Badge variant={visitReport.workflow_step === 'completed' ? 'default' : 'secondary'} className="text-xs">
+                      {visitReport.workflow_step === 'awaiting_medecin' && '⏳ En attente médecin'}
+                      {visitReport.workflow_step === 'awaiting_patient' && '📋 En attente de votre approbation'}
+                      {visitReport.workflow_step === 'completed' && '✅ Validé'}
+                    </Badge>
+                  )}
+                </h3>
+
+                {reportLoading ? (
+                  <div className="bg-gray-50 p-4 rounded-lg flex items-center justify-center gap-2 text-gray-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Chargement du compte-rendu…</span>
+                  </div>
+                ) : visitReport?.workflow_data ? (
+                  <div className="space-y-3">
+                    {/* Données du formulaire Olga rempli par l'infirmier */}
+                    <div className="bg-gray-50 p-3 rounded-lg space-y-2">
+                      {visitReport.workflow_data.workflow_label && (
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          {visitReport.workflow_data.workflow_label}
+                        </p>
+                      )}
+                      {visitReport.workflow_data.workflow_values &&
+                        Object.entries(visitReport.workflow_data.workflow_values as Record<string, string | boolean>).map(([key, value]) => (
+                          <div key={key} className="flex flex-col">
+                            <span className="text-xs text-gray-500">{visitReport.workflow_data.workflow_fields?.[key] || key.replace(/_/g, ' ')}</span>
+                            <span className="text-sm text-gray-900">
+                              {typeof value === 'boolean' ? (value ? '✓ Oui' : '✗ Non') : (value || '—')}
+                            </span>
+                          </div>
+                        ))
+                      }
+                    </div>
+
+                    {/* Données du formulaire médecin */}
+                    {visitReport.workflow_data.medecin_form_data?.workflow_values && (
+                      <div className="bg-green-50 border border-green-200 p-3 rounded-lg space-y-2">
+                        <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">
+                          {visitReport.workflow_data.medecin_form_data.workflow_label || 'Commentaires du médecin'}
+                        </p>
+                        {Object.entries(visitReport.workflow_data.medecin_form_data.workflow_values as Record<string, string | boolean>).map(([key, value]) => (
+                          <div key={key} className="flex flex-col">
+                            <span className="text-xs text-gray-500">{visitReport.workflow_data.medecin_form_data.workflow_fields?.[key] || key.replace(/_/g, ' ')}</span>
+                            <span className="text-sm text-gray-900">
+                              {typeof value === 'boolean' ? (value ? '✓ Oui' : '✗ Non') : (value || '—')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Champs classiques si remplis */}
+                    {(visitReport.actes_realises || visitReport.observations || visitReport.medicaments_administres || visitReport.suite_a_donner) && (
+                      <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg space-y-2">
+                        {visitReport.actes_realises && (
+                          <div><span className="text-xs text-gray-500">Actes réalisés</span><p className="text-sm">{visitReport.actes_realises}</p></div>
+                        )}
+                        {visitReport.observations && (
+                          <div><span className="text-xs text-gray-500">Observations</span><p className="text-sm">{visitReport.observations}</p></div>
+                        )}
+                        {visitReport.medicaments_administres && (
+                          <div><span className="text-xs text-gray-500">Médicaments administrés</span><p className="text-sm">{visitReport.medicaments_administres}</p></div>
+                        )}
+                        {visitReport.suite_a_donner && (
+                          <div><span className="text-xs text-gray-500">Suite à donner</span><p className="text-sm">{visitReport.suite_a_donner}</p></div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Infos de validation */}
+                    {(visitReport.created_at || visitReport.medecin_validated_at || visitReport.patient_approved_at) && (
+                      <div className="text-xs text-green-700 space-y-1">
+                        {visitReport.created_at && (
+                          <p className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Infirmier : {formatDateTimeSeconds(visitReport.created_at)}</p>
+                        )}
+                        {visitReport.medecin_validated_at && (
+                          <p className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Médecin : {formatDateTimeSeconds(visitReport.medecin_validated_at)}</p>
+                        )}
+                        {visitReport.patient_approved_at && (
+                          <p className="flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Vous : {formatDateTimeSeconds(visitReport.patient_approved_at)}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Bouton Approuver si en attente patient */}
+                    {visitReport.workflow_step === 'awaiting_patient' && (
+                      <Button
+                        size="sm"
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        disabled={approving}
+                        onClick={async () => {
+                          try {
+                            setApproving(true);
+                            await api.approveVisitReportByPatient(visitReport.id);
+                            setVisitReport({ ...visitReport, workflow_step: 'completed', patient_approved_at: new Date().toISOString() });
+                            toast.success('Compte-rendu approuvé avec succès');
+                          } catch (e) {
+                            console.error('Erreur approbation:', e);
+                            toast.error("Erreur lors de l'approbation");
+                          } finally {
+                            setApproving(false);
+                          }
+                        }}
+                      >
+                        {approving ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Approbation…</>
+                        ) : (
+                          <><CheckCircle className="h-4 w-4 mr-2" /> Approuver le compte-rendu</>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <p className="text-sm text-gray-500 italic">
+                      Aucun compte-rendu disponible pour ce rendez-vous.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Ordonnance si applicable */}
@@ -633,9 +910,140 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
             </div>
 
             <div className="flex gap-2 pt-3 border-t">
-              <Button variant="outline" size="sm" className="flex-1">
-                <FileText className="h-4 w-4 mr-2" />
-                {t('common.download')}
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                disabled={!visitReport}
+                onClick={() => {
+                  if (!visitReport || !selectedAppointment) return;
+                  const doc = new jsPDF();
+                  const margin = 20;
+                  let y = 20;
+
+                  // En-tête
+                  doc.setFontSize(18);
+                  doc.setFont('helvetica', 'bold');
+                  doc.text('CareWay - Compte-rendu de visite', margin, y);
+                  y += 12;
+
+                  // Infos RDV
+                  doc.setFontSize(10);
+                  doc.setFont('helvetica', 'normal');
+                  doc.setTextColor(100);
+                  doc.text(`Date : ${formatDate(selectedAppointment.date)}  |  Heure : ${selectedAppointment.time}`, margin, y); y += 6;
+                  doc.text(`Infirmier(e) : ${selectedAppointment.nurseName}`, margin, y); y += 6;
+                  doc.text(`Lieu : ${selectedAppointment.location}`, margin, y); y += 6;
+                  doc.text(`Type de soin : ${selectedAppointment.type}`, margin, y); y += 10;
+
+                  // Ligne de séparation
+                  doc.setDrawColor(200);
+                  doc.line(margin, y, 190, y); y += 8;
+
+                  // Statut
+                  doc.setTextColor(0);
+                  doc.setFontSize(10);
+                  const statusText = visitReport.workflow_step === 'completed' ? 'Valide' : visitReport.workflow_step === 'awaiting_patient' ? 'En attente approbation patient' : 'En attente validation medecin';
+                  doc.text(`Statut : ${statusText}`, margin, y); y += 8;
+
+                  // Formulaire Olga
+                  if (visitReport.workflow_data?.workflow_label) {
+                    doc.setFontSize(12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(visitReport.workflow_data.workflow_label, margin, y); y += 8;
+                  }
+
+                  if (visitReport.workflow_data?.workflow_values) {
+                    doc.setFontSize(10);
+                    const wfFields = visitReport.workflow_data.workflow_fields || {};
+                    Object.entries(visitReport.workflow_data.workflow_values as Record<string, string | boolean>).forEach(([key, value]) => {
+                      if (y > 265) { doc.addPage(); y = 20; }
+                      const label = wfFields[key] || key.replace(/_/g, ' ');
+                      const val = typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : (value || '—');
+                      doc.setFont('helvetica', 'bold');
+                      doc.setTextColor(80);
+                      doc.text(`${label} :`, margin, y);
+                      y += 6;
+                      doc.setFont('helvetica', 'normal');
+                      doc.setTextColor(0);
+                      const lines = doc.splitTextToSize(String(val), 170);
+                      if (y + lines.length * 5 > 280) { doc.addPage(); y = 20; }
+                      doc.text(lines, margin, y);
+                      y += 5 * lines.length + 4;
+                    });
+                  }
+
+                  // Données médecin
+                  if (visitReport.workflow_data?.medecin_form_data?.workflow_values) {
+                    y += 4;
+                    if (y > 265) { doc.addPage(); y = 20; }
+                    doc.setFontSize(12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(0);
+                    doc.text(visitReport.workflow_data.medecin_form_data.workflow_label || 'Commentaires du médecin', margin, y);
+                    y += 8;
+                    doc.setFontSize(10);
+                    const mdFields = visitReport.workflow_data.medecin_form_data.workflow_fields || {};
+                    Object.entries(visitReport.workflow_data.medecin_form_data.workflow_values as Record<string, string | boolean>).forEach(([key, value]) => {
+                      if (y > 265) { doc.addPage(); y = 20; }
+                      const label = mdFields[key] || key.replace(/_/g, ' ');
+                      const val = typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : (value || '—');
+                      doc.setFont('helvetica', 'bold');
+                      doc.setTextColor(80);
+                      doc.text(`${label} :`, margin, y);
+                      y += 6;
+                      doc.setFont('helvetica', 'normal');
+                      doc.setTextColor(0);
+                      const lines = doc.splitTextToSize(String(val), 170);
+                      if (y + lines.length * 5 > 280) { doc.addPage(); y = 20; }
+                      doc.text(lines, margin, y);
+                      y += 5 * lines.length + 4;
+                    });
+                  }
+
+                  // Champs classiques
+                  const fields = [
+                    { label: 'Actes realises', val: visitReport.actes_realises },
+                    { label: 'Observations', val: visitReport.observations },
+                    { label: 'Medicaments administres', val: visitReport.medicaments_administres },
+                    { label: 'Suite a donner', val: visitReport.suite_a_donner },
+                  ].filter(f => f.val);
+                  if (fields.length > 0) {
+                    y += 4;
+                    fields.forEach(({ label, val }) => {
+                      if (y > 270) { doc.addPage(); y = 20; }
+                      doc.setFont('helvetica', 'bold');
+                      doc.text(`${label} :`, margin, y); y += 6;
+                      doc.setFont('helvetica', 'normal');
+                      const lines = doc.splitTextToSize(val!, 170);
+                      doc.text(lines, margin, y);
+                      y += 6 * lines.length + 4;
+                    });
+                  }
+
+                  // Validation (horodatée)
+                  const nurseTs = visitReport.created_at ? formatDateTimeSeconds(visitReport.created_at) : null;
+                  const docTs = visitReport.medecin_validated_at ? formatDateTimeSeconds(visitReport.medecin_validated_at) : null;
+                  const patientTs = visitReport.patient_approved_at ? formatDateTimeSeconds(visitReport.patient_approved_at) : null;
+
+                  if (nurseTs || docTs || patientTs) {
+                    y += 4;
+                    doc.setTextColor(34, 139, 34);
+                    if (nurseTs) { doc.text(`Infirmier : ${nurseTs}`, margin, y); y += 6; }
+                    if (docTs) { doc.text(`Medecin : ${docTs}`, margin, y); y += 6; }
+                    if (patientTs) { doc.text(`Patient : ${patientTs}`, margin, y); }
+                  }
+
+                  // Pied de page
+                  doc.setTextColor(150);
+                  doc.setFontSize(8);
+                  doc.text(`Genere le ${new Date().toLocaleDateString('fr-FR')} par CareWay`, margin, 285);
+
+                  doc.save(`CareWay_Compte-rendu_${selectedAppointment.date}.pdf`);
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {t('common.download')} PDF
               </Button>
               <Button onClick={() => setIsDetailsOpen(false)} size="sm" className="flex-1 bg-black hover:bg-gray-800">
                 {t('common.close')}
@@ -643,6 +1051,30 @@ export function PatientDashboard({ user, onLogout, onUpdateUser }: PatientDashbo
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Incoming Call Notification */}
+      {incomingCall && (
+        <IncomingCallNotification
+          call={incomingCall}
+          onAccept={handleAcceptIncomingCall}
+          onReject={handleRejectIncomingCall}
+        />
+      )}
+
+      {/* Visio Modal - patient side: no nurseId to avoid re-triggering incoming-call */}
+      {visioAppointment && (
+        <VisioModal
+          isOpen={showVisioModal}
+          onClose={() => {
+            setShowVisioModal(false);
+            setVisioAppointment(null);
+          }}
+          userName={user.name}
+          otherUserName={visioAppointment.nurseName}
+          roomId={visioAppointment.id}
+          patientId={user.id}
+        />
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import {
   Sun,
   Moon,
   Navigation,
+  Video,
   Search,
   ChevronRight,
   FileCheck,
@@ -28,6 +29,7 @@ import { AppointmentDetailsModal } from './AppointmentDetailsModal';
 import { AppointmentConfirmDialog } from './AppointmentConfirmDialog';
 import { AIRouteOptimizer } from './AIRouteOptimizer';
 import { NurseSettings } from './NurseSettings';
+import { VisioModal } from './VisioModal';
 import { VisitRecapModal } from './VisitRecapModal';
 import { MedecinValidationsModal } from './MedecinValidationsModal';
 import type { User as UserType } from '../App';
@@ -35,6 +37,7 @@ import * as api from '../services/api';
 import { toast } from 'sonner';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useLanguage } from './LanguageContext';
+import { getOlgaTestState, setOlgaTestState, clearOlgaTestState } from '../utils/olgaTestWorkflow';
 
 interface NurseDashboardProps {
   user: UserType;
@@ -100,7 +103,12 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showVisioModal, setShowVisioModal] = useState(false);
+  const [visioAppointment, setVisioAppointment] = useState<Appointment | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [careTypes, setCareTypes] = useState<api.CareType[]>([]);
   const [showValidations, setShowValidations] = useState(false);
+  const [olgaTestState, setOlgaTestStateLocal] = useState(getOlgaTestState());
 
 
   // Charger la liste des formulaires Olga
@@ -277,7 +285,17 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
     };
 
     fetchData();
+    // sync test state
+    setOlgaTestStateLocal(getOlgaTestState());
   }, [user.id]);
+
+  // Poll test state to reflect updates from patient/medecin in same tab
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOlgaTestStateLocal(getOlgaTestState());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const confirmedAppointments = appointments.filter(apt => apt.status === 'confirmed');
   const completedAppointments = appointments.filter(apt => apt.status === 'done');
@@ -447,6 +465,12 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
       console.error('Error rejecting appointment:', error);
       alert('Erreur lors du refus du rendez-vous');
     }
+  };
+
+  const handleLiveVisio = (appointment: Appointment) => {
+    console.log('Démarrage de la visio avec', appointment.patientName);
+    setVisioAppointment(appointment);
+    setShowVisioModal(true);
   };
 
   const handleCompleteAppointment = async (id: string) => {
@@ -704,6 +728,55 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
           </p>
         </div>
 
+        {/* Olga test inbox */}
+        {olgaTestState.status === 'pending_nurse' && olgaTestState.payload && (
+          <Card className="mb-8 border-blue-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileCheck className="h-5 w-5 text-blue-600" />
+                Formulaire patient à valider (test local)
+              </CardTitle>
+              <CardDescription>Reçu de {olgaTestState.payload.from}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Object.entries(olgaTestState.payload.values || {}).map(([k, v]) => (
+                <div key={k} className="text-sm text-gray-800">
+                  <span className="font-medium">{k}</span>: {String(v)}
+                </div>
+              ))}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => {
+                    const next = {
+                      status: 'pending_doctor' as const,
+                      payload: olgaTestState.payload,
+                      nurseValidatedAt: new Date().toISOString(),
+                    };
+                    setOlgaTestState(next);
+                    setOlgaTestStateLocal(next);
+                    toast.success('Envoyé au médecin (test)');
+                  }}
+                >
+                  Valider et envoyer au médecin
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    clearOlgaTestState();
+                    const fresh = getOlgaTestState();
+                    setOlgaTestStateLocal(fresh);
+                    toast.success('Workflow test réinitialisé');
+                  }}
+                >
+                  Rejeter / reset
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <Card>
@@ -900,24 +973,36 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
                             {t('dashboard.appointments.gps')}
                           </Button>
                         </div>
-                        <div className="pt-2 flex gap-2">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="flex-1"
-                            onClick={() => {
-                              setSelectedAppointment(appointment);
-                              setShowDetailsModal(true);
-                            }}
+                        <div className="pt-2 space-y-2">
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedAppointment(appointment);
+                                setShowDetailsModal(true);
+                              }}
+                            >
+                              {t('dashboard.appointments.details')}
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              className="flex-1 bg-black hover:bg-gray-800 text-white"
+                              onClick={() => handleCompleteAppointment(appointment.id)}
+                            >
+                              {t('dashboard.mark_completed')}
+                            </Button>
+                          </div>
+                          <Button
+                            onClick={() => handleLiveVisio(appointment)}
+                            variant="outline"
+                            className="gap-2 w-full"
+                            size="sm"
                           >
-                            {t('dashboard.appointments.details')}
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            className="flex-1 bg-black hover:bg-gray-800 text-white"
-                            onClick={() => handleCompleteAppointment(appointment.id)}
-                          >
-                            {t('dashboard.mark_completed')}
+                            <Video className="h-4 w-4" />
+                            <span className="hidden sm:inline">Live visio connect</span>
+                            <span className="sm:hidden">Visio</span>
                           </Button>
                         </div>
                       </CardContent>
@@ -1088,6 +1173,21 @@ export function NurseDashboard({ user, onLogout }: NurseDashboardProps) {
         <MedecinValidationsModal
           medecinId={user.id}
           onClose={() => setShowValidations(false)}
+        />
+      )}
+
+      {visioAppointment && (
+        <VisioModal
+          isOpen={showVisioModal}
+          onClose={() => {
+            setShowVisioModal(false);
+            setVisioAppointment(null);
+          }}
+          userName={user.name}
+          otherUserName={visioAppointment.patientName}
+          roomId={visioAppointment.id}
+          patientId={visioAppointment.patient_id}
+          nurseId={user.id}
         />
       )}
     </div>
